@@ -1,0 +1,117 @@
+const express = require('express');
+const cors = require('cors');
+const morgan = require('morgan');
+const cookieParser = require('cookie-parser');
+const swaggerUi = require('swagger-ui-express');
+const config = require('./config');
+const swaggerDocument = require('./docs/swagger');
+const serviceAuth = require('./middlewares/serviceAuth.middleware');
+const errorMiddleware = require('./middlewares/error.middleware');
+const adminRoutes = require('./routes/admins');
+const dashboardRoutes = require('./routes/dashboard');
+const syncRoutes = require('./routes/sync');
+const paymentRoutes = require('./routes/payments');
+const subscriptionRoutes = require('./routes/subscriptions');
+const creditsRoutes = require('./routes/credits');
+const settingsRoutes = require('./routes/settings');
+const plansRoutes = require('./routes/plans');
+const jobRoutes = require('./routes/jobRoutes');
+
+// Auth service (merged): load services so globals are set, then routes
+require('./authService/services');
+const authRoutes = require('./authService/routes/auth');
+const userRoutes = require('./authService/routes/users');
+const roleRoutes = require('./authService/routes/roles');
+const permissionRoutes = require('./authService/routes/permissions');
+const organizationFeaturesRoutes = require('./authService/routes/organizationFeatures');
+const authHealthRoutes = require('./authService/routes/health');
+const authController = require('./authService/controllers/authController');
+const rateLimitMiddleware = require('./authService/middleware/rateLimit.middleware');
+
+const app = express();
+
+// CORS: from .env (comma-separated CORS_ORIGINS); fallback for dev when empty
+const DEFAULT_CORS_ORIGINS = [
+    'http://localhost:4000', 'http://localhost:4001', 'http://localhost:4002', 'http://localhost:4003',
+    'http://localhost:5173', 'http://localhost:5174',
+    'http://127.0.0.1:4000', 'http://127.0.0.1:4001', 'http://127.0.0.1:4002', 'http://127.0.0.1:4003',
+    'http://127.0.0.1:5173', 'http://127.0.0.1:5174',
+];
+const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+const originList = corsOrigins.length > 0 ? corsOrigins : DEFAULT_CORS_ORIGINS;
+app.use(cors({
+    origin: (origin, cb) => {
+        if (!origin) return cb(null, true); // same-origin or tools (e.g. Postman)
+        if (originList.includes(origin)) return cb(null, true);
+        return cb(null, false);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+        'Content-Type', 'Authorization', 'Accept', 'X-Requested-With',
+        'X-Service-Token', 'X-Service-Name', 'X-User-Id', 'X-User-Email', 'X-User-Roles',
+        'X-Tenant-Id', 'X-XSRF-Token', 'X-CSRF-TOKEN',
+    ],
+    exposedHeaders: ['X-Token-Refreshed', 'X-Logged-Out', 'X-User-ID'],
+}));
+app.use(morgan('dev'));
+app.use(express.json());
+app.use(cookieParser());
+
+// Swagger Documentation
+const swaggerUiOptions = {
+    customCss: `
+        .swagger-ui .topbar { background-color: #d32f2f; }
+        .swagger-ui .info .title { color: #d32f2f; }
+        .swagger-ui .btn.authorize { background-color: #d32f2f; border-color: #d32f2f; }
+        .swagger-ui .btn.authorize svg { fill: #fff; }
+    `,
+    customSiteTitle: 'Superadmin Backend API Documentation',
+    swaggerOptions: {
+        operationsSorter: (a, b) => {
+            const order = { post: 0, get: 1, put: 2, patch: 3, delete: 4 };
+            const methodA = a.get('method');
+            const methodB = b.get('method');
+            return (order[methodA] ?? 99) - (order[methodB] ?? 99);
+        }
+    }
+};
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, swaggerUiOptions));
+app.get('/api-docs.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerDocument);
+});
+
+// Health: use auth health router (GET /health, GET /ready)
+app.use('/', authHealthRoutes);
+
+// Public auth: refresh token (no X-Service-Token required; gateway calls this with cookie)
+const publicAuthRouter = express.Router();
+publicAuthRouter.post('/refresh', rateLimitMiddleware.auth, (req, res, next) => authController.refreshToken(req, res, next));
+app.use('/auth-session', publicAuthRouter);
+
+app.use(serviceAuth(config.service.internalToken));
+
+// Auth service routes (login, logout, me, users, roles, permissions, organization-features)
+app.use('/auth-session', authRoutes);
+app.use('/users', userRoutes);
+app.use('/roles', roleRoutes);
+app.use('/permissions', permissionRoutes);
+app.use('/organization-features', organizationFeaturesRoutes);
+
+// SuperadminFrontend expects /superadmin/* – mount under /superadmin
+app.use('/superadmin/admins', adminRoutes);
+app.use('/superadmin/dashboard', dashboardRoutes);
+app.use('/superadmin/sync', syncRoutes);
+app.use('/superadmin/payments', paymentRoutes);
+app.use('/superadmin/subscriptions', subscriptionRoutes);
+app.use('/superadmin/credits', creditsRoutes);
+app.use('/superadmin/settings', settingsRoutes);
+app.use('/superadmin/plans', plansRoutes);
+app.use('/superadmin/jobs', jobRoutes);
+
+
+app.use(errorMiddleware);
+
+module.exports = app;

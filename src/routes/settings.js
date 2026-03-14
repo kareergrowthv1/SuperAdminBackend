@@ -1,0 +1,26 @@
+const express = require('express');
+const router = express.Router();
+const settingsController = require('../controllers/settingsController');
+
+router.get('/', settingsController.getSettings);
+router.get('/ai-config', settingsController.getAiConfig);
+router.post('/ai-config', settingsController.saveAiConfig);
+
+router.get('/email', settingsController.getEmailConfig);
+router.put('/email', settingsController.saveEmailConfig);
+
+router.get('/notifications', settingsController.getNotifications);
+router.post('/notifications', settingsController.saveNotifications);
+
+router.get('/candidates', settingsController.getCandidates);
+router.post('/candidates', settingsController.saveCandidates);
+
+router.get('/discounts', settingsController.getDiscounts);
+router.post('/discounts', settingsController.saveDiscounts);
+
+router.get('/credits', settingsController.getCredits);
+router.post('/credits', settingsController.saveCredits);
+
+router.post('/', settingsController.saveSettings);
+
+module.exports = router;
