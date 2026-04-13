@@ -162,7 +162,8 @@ class AuthController {
                         success: true,
                         message: 'Token refreshed successfully',
                         data: {
-                            accessToken: result.accessToken
+                            accessToken: result.accessToken,
+                            user: result.user
                         }
                     });
                 } catch (refreshErr) {
@@ -230,6 +231,7 @@ class AuthController {
                 organizationId,
                 oldPassword,
                 newPassword,
+                subjectType: req.user.subjectType,
                 ipAddress,
                 userAgent,
                 requestId: req.requestId
@@ -415,10 +417,23 @@ class AuthController {
             if (!key) {
                 return res.status(400).json({ success: false, message: 'Email or phone is required' });
             }
-            await authService.candidateForgotPassword(key);
+            const result = await authService.candidateForgotPassword(key);
             res.status(200).json({
                 success: true,
-                message: 'If an account exists, you will receive reset instructions.'
+                ...result
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async candidateResetPassword(req, res, next) {
+        try {
+            const { emailOrPhone, otp, newPassword } = req.body || {};
+            const result = await authService.candidateResetPassword(emailOrPhone, otp, newPassword);
+            res.status(200).json({
+                success: true,
+                ...result
             });
         } catch (error) {
             next(error);

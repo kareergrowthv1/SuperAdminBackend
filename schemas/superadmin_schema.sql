@@ -212,7 +212,7 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT IGNORE INTO settings (`key`, `value`) VALUES 
 ('minimumScreeningCredits', '0'),
 ('screeningCreditsCostPerPrice', '0.00'),
-('emailSettings', '{"enabled":true,"apiUrl":"https://api.zeptomail.in/v1.1/email","apiKey":"PHtE6r1fEL/ojGYn8hRR4vS7H5T1MY8s+O4zKFROsd1GDPEHF01TqI8pmmO2qRZ8AKRBEPOdwYpvtemYte2AITzoY21MWmqyqK3sx/VYSPOZsbq6x00at1sddEXaXI7ucdJt3C3Tv9rcNA==","fromEmail":"noreply@qwikhire.ai","fromName":"KareerGrowth"}');
+('emailSettings', '{"enabled":true,"apiUrl":"https://api.zeptomail.in/v1.1/email","apiKey":"PHtE6r0IQOrvjGN88EJTsaS6FpT1ZootrONmfwNH5YtCWPYATU1Vrtsrkz/mr0h8APgTHPObyIJv47rNtL+CdjnkPWpKDWqyqK3sx/VYSPOZsbq6x00atVobd0fVVIHoc9Fs1CTWuNjTNA==","fromEmail":"noreply@systemmindz.com","fromName":"KareerGrowth"}');
 
 -- ============================================================
 -- 6b. AI Config Table (OpenAI / AI provider settings from ref/backend_ai-main)

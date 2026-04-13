@@ -10,7 +10,7 @@ const validate = (req, res, next) => {
     
     if (!errors.isEmpty()) {
         const errorMessages = errors.array().map(err => ({
-            field: err.param,
+            field: err.path || err.param || 'unknown',
             message: err.msg,
             value: err.value
         }));

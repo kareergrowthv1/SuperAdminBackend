@@ -40,60 +40,112 @@ const jwtAuthMiddleware = async (req, res, next) => {
             `role:version:${roleId}:${organizationId || 'platform'}`
         );
 
-        const sql = decoded.isPlatformAdmin ? `
-            SELECT u.*, r.version as roleVersion
-            FROM users u
-            LEFT JOIN roles r ON u.role_id = r.id
-            WHERE u.id = ? AND u.is_active = true
-        ` : `
-            SELECT u.*, r.version as roleVersion
-            FROM users u
-            INNER JOIN roles r ON u.role_id = r.id
-            WHERE u.id = ? AND u.organization_id = ? AND u.is_active = true
-        `;
+        let user;
+        let currentRoleVersion;
 
-        const users = decoded.isPlatformAdmin
-            ? await db.query(sql, [decoded.userId])
-            : await db.query(sql, [decoded.userId, decoded.organizationId]);
-
-        if (users.length === 0) {
-            return res.status(401).json({
-                success: false,
-                message: 'User not found or inactive',
-                code: 'USER_NOT_FOUND'
-            });
-        }
-
-        const user = users[0];
-
-        // Validate role version (for permission invalidation)
-        let currentRoleVersion = user.roleVersion;
-        const cachedVersion = await redis.get(
-            roleVersionKey(user.role_id, user.organization_id)
-        );
-
-        if (cachedVersion) {
-            currentRoleVersion = parseInt(cachedVersion, 10);
-        } else if (currentRoleVersion !== undefined && currentRoleVersion !== null) {
-            await redis.set(
-                roleVersionKey(user.role_id, user.organization_id),
-                String(currentRoleVersion),
-                86400
+        if (decoded.subjectType === 'candidate') {
+            const candidates = await db.query(
+                'SELECT * FROM candidate_login WHERE id = ? AND is_active = true',
+                [decoded.userId]
             );
-        }
 
-        if (decoded.roleVersion !== currentRoleVersion) {
-            logger.warn('Role version mismatch - token invalidated', {
-                userId: user.id,
-                tokenVersion: decoded.roleVersion,
-                currentVersion: currentRoleVersion
-            });
+            if (candidates.length === 0) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Candidate not found or inactive',
+                    code: 'CANDIDATE_NOT_FOUND'
+                });
+            }
 
-            return res.status(401).json({
-                success: false,
-                message: 'Token expired due to permission changes. Please login again.',
-                code: 'TOKEN_VERSION_MISMATCH'
-            });
+            const candidate = candidates[0];
+            user = {
+                id: candidate.id,
+                email: candidate.email,
+                username: candidate.email || candidate.mobile_number,
+                organizationId: candidate.organization_id,
+                roleId: null,
+                roleCode: 'CANDIDATE',
+                isAdmin: false,
+                isPlatformAdmin: false,
+                isCollege: false,
+                isSubscribed: true,
+                isHold: false,
+                client: decoded.tenantId, // Use tenantId from token for candidates
+                subjectType: 'candidate'
+            };
+            currentRoleVersion = decoded.roleVersion; // Candidates don't have versioned roles in the same way
+        } else {
+            const sql = decoded.isPlatformAdmin ? `
+                SELECT u.*, r.version as roleVersion, r.code as roleCode
+                FROM users u
+                LEFT JOIN roles r ON u.role_id = r.id
+                WHERE u.id = ? AND u.is_active = true
+            ` : `
+                SELECT u.*, r.version as roleVersion, r.code as roleCode
+                FROM users u
+                INNER JOIN roles r ON u.role_id = r.id
+                WHERE u.id = ? AND u.organization_id = ? AND u.is_active = true
+            `;
+
+            const users = decoded.isPlatformAdmin
+                ? await db.query(sql, [decoded.userId])
+                : await db.query(sql, [decoded.userId, decoded.organizationId]);
+
+            if (users.length === 0) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'User not found or inactive',
+                    code: 'USER_NOT_FOUND'
+                });
+            }
+
+            const dbUser = users[0];
+            user = {
+                id: dbUser.id,
+                email: dbUser.email,
+                username: dbUser.username,
+                organizationId: dbUser.organization_id,
+                roleId: dbUser.role_id,
+                roleCode: dbUser.roleCode,
+                roleVersion: dbUser.roleVersion,
+                isAdmin: dbUser.is_admin,
+                isPlatformAdmin: dbUser.is_platform_admin,
+                isCollege: !!dbUser.is_college,
+                isSubscribed: !!dbUser.is_subscribed,
+                isHold: !!dbUser.is_hold,
+                client: dbUser.client,
+                subjectType: 'user'
+            };
+            currentRoleVersion = dbUser.roleVersion;
+
+            // Validate role version (for permission invalidation) - only for platform users
+            const cachedVersion = await redis.get(
+                roleVersionKey(user.roleId, user.organizationId)
+            );
+
+            if (cachedVersion) {
+                currentRoleVersion = parseInt(cachedVersion, 10);
+            } else if (currentRoleVersion !== undefined && currentRoleVersion !== null) {
+                await redis.set(
+                    roleVersionKey(user.roleId, user.organizationId),
+                    String(currentRoleVersion),
+                    86400
+                );
+            }
+
+            if (decoded.roleVersion !== currentRoleVersion) {
+                logger.warn('Role version mismatch - token invalidated', {
+                    userId: user.id,
+                    tokenVersion: decoded.roleVersion,
+                    currentVersion: currentRoleVersion
+                });
+
+                return res.status(401).json({
+                    success: false,
+                    message: 'Token expired due to permission changes. Please login again.',
+                    code: 'TOKEN_VERSION_MISMATCH'
+                });
+            }
         }
 
         // Check if account is locked
@@ -125,15 +177,20 @@ const jwtAuthMiddleware = async (req, res, next) => {
 
         // Store user info in request
         req.user = {
-            userId: user.id,
+            id: user.id || user.userId,
+            userId: user.id || user.userId,
             email: user.email,
             username: user.username,
-            organizationId: user.organization_id,
-            roleId: user.role_id,
+            organizationId: user.organizationId || user.organization_id,
+            roleId: user.roleId || user.role_id,
             roleVersion: currentRoleVersion,
-            isAdmin: user.is_admin,
-            isPlatformAdmin: user.is_platform_admin,
+            isAdmin: user.isAdmin || user.is_admin,
+            isPlatformAdmin: user.isPlatformAdmin || user.is_platform_admin,
+            isCollege: !!(user.isCollege || user.is_college),
+            isSubscribed: !!(user.isSubscribed || user.is_subscribed),
+            isHold: !!(user.isHold || user.is_hold),
             client: user.client,
+            subjectType: user.subjectType, // IMPORTANT: Pass subjectType to controller/service
             jti: decoded.jti
         };
 

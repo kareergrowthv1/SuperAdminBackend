@@ -22,7 +22,8 @@ const REPORT_LEVEL_KEYS = [
   'round1ReportLevel',
   'round2ReportLevel',
   'round3ReportLevel',
-  'round4ReportLevel'
+  'round4ReportLevel',
+  'resumeReportLevel'
 ];
 
 const REPORT_LEVELS = ['none', 'min', 'standard', 'complete'];
@@ -43,7 +44,8 @@ const DEFAULT_PERMISSIONS = Object.freeze({
   round1ReportLevel: 'none',
   round2ReportLevel: 'none',
   round3ReportLevel: 'none',
-  round4ReportLevel: 'none'
+  round4ReportLevel: 'none',
+  resumeReportLevel: 'none'
 });
 
 function normalizePermissions(permissions) {

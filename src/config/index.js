@@ -73,7 +73,28 @@ const config = {
         enableLoginAttemptTracking: process.env.ENABLE_LOGIN_ATTEMPT_TRACKING !== 'false',
         enableXsrfProtection: process.env.ENABLE_XSRF_PROTECTION !== 'false',
         enableRateLimiting: process.env.ENABLE_RATE_LIMITING !== 'false'
-    }
+    },
+    github: {
+        clientId: process.env.GITHUB_CLIENT_ID,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET,
+        callbackUrl: process.env.GITHUB_CALLBACK_URL
+    },
+    google: {
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackUrl: process.env.GOOGLE_CALLBACK_URL,
+    },
+    microsoft: {
+        clientId: process.env.MICROSOFT_CLIENT_ID,
+        clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+        tenantId: process.env.MICROSOFT_TENANT_ID || 'common',
+        callbackUrl: process.env.MICROSOFT_CALLBACK_URL,
+    },
+    linkedin: {
+        clientId: process.env.LINKEDIN_CLIENT_ID,
+        clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
+        callbackUrl: process.env.LINKEDIN_CALLBACK_URL,
+    },
 };
 
 module.exports = config;

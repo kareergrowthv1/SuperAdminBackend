@@ -151,5 +151,16 @@ router.post(
     validateMiddleware,
     authController.candidateForgotPassword
 );
+router.post(
+    '/candidate/reset-password',
+    rateLimitMiddleware.auth,
+    [
+        body('emailOrPhone').trim().notEmpty().withMessage('Email or phone is required'),
+        body('otp').notEmpty().withMessage('OTP is required'),
+        body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters')
+    ],
+    validateMiddleware,
+    authController.candidateResetPassword
+);
 
 module.exports = router;

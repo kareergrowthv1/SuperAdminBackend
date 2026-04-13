@@ -119,14 +119,35 @@ const seedSystemData = async (connection) => {
         const [atsRole] = await connection.query("SELECT id FROM roles WHERE code = 'ATS'");
         const [allFeatures] = await connection.query("SELECT id, feature_key FROM features");
 
+        const defaultDashOptions = JSON.stringify({
+            dashboard_page: true,
+            positions_stats: true,
+            candidates_stats: true,
+            students_stats: true,
+            users_stats: true,
+            attendance_stats: true,
+            tasks_stats: true,
+            new_position_btn: true,
+            add_candidate_btn: true,
+            analytics_chart: true,
+            activity_feed: true,
+            volume_chart: true,
+            performance_radar: true,
+            recent_positions: true,
+            recent_students: true,
+            recent_interviews: true,
+            recent_tasks: true
+        });
+
         if (superadminRole[0]) {
             for (const f of allFeatures) {
-                // SUPERADMIN gets 255
+                const dashOpts = f.feature_key === 'DASHBOARD' ? defaultDashOptions : null;
+                // SUPERADMIN gets 255 and ALL scope
                 await connection.query(
-                    `INSERT INTO role_feature_permissions (id, role_id, feature_id, permissions, created_at)
-                     VALUES (?, ?, ?, 255, NOW())
-                     ON DUPLICATE KEY UPDATE permissions = 255`,
-                    [uuidv4(), superadminRole[0].id, f.id]
+                    `INSERT INTO role_feature_permissions (id, role_id, feature_id, permissions, data_scope, dashboard_options, created_at)
+                     VALUES (?, ?, ?, 255, 'ALL', ?, NOW())
+                     ON DUPLICATE KEY UPDATE permissions = 255, data_scope = 'ALL', dashboard_options = VALUES(dashboard_options)`,
+                    [uuidv4(), superadminRole[0].id, f.id, dashOpts]
                 );
             }
         }
@@ -141,11 +162,12 @@ const seedSystemData = async (connection) => {
                     f.feature_key === 'VENDORS' || f.feature_key === 'APPLICATIONS') {
                     continue;
                 }
+                const dashOpts = f.feature_key === 'DASHBOARD' ? defaultDashOptions : null;
                 await connection.query(
-                    `INSERT INTO role_feature_permissions (id, role_id, feature_id, permissions, created_at)
-                     VALUES (?, ?, ?, ?, NOW())
-                     ON DUPLICATE KEY UPDATE permissions = VALUES(permissions)`,
-                    [uuidv4(), adminRole[0].id, f.id, crudExportPermissions]
+                    `INSERT INTO role_feature_permissions (id, role_id, feature_id, permissions, data_scope, dashboard_options, created_at)
+                     VALUES (?, ?, ?, ?, 'ALL', ?, NOW())
+                     ON DUPLICATE KEY UPDATE permissions = VALUES(permissions), data_scope = 'ALL', dashboard_options = VALUES(dashboard_options)`,
+                    [uuidv4(), adminRole[0].id, f.id, crudExportPermissions, dashOpts]
                 );
             }
         }
@@ -263,6 +285,11 @@ const runMigrations = async (connection) => {
         await addColumnIfMissing('users', 'is_college', "TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'true if ADMIN role (College), false if ATS role'");
         // Add last_login_device column if not exists
         await addColumnIfMissing('users', 'last_login_device', 'VARCHAR(100) NULL');
+
+        // Add data_scope column to role_feature_permissions if not exists
+        await addColumnIfMissing('role_feature_permissions', 'data_scope', "VARCHAR(20) DEFAULT 'OWN'");
+        // Add dashboard_options column to role_feature_permissions if not exists
+        await addColumnIfMissing('role_feature_permissions', 'dashboard_options', 'JSON NULL');
 
         logger.info('✓ User table migrations applied');
     } catch (err) {

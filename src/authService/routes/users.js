@@ -10,6 +10,19 @@ const permissionMiddleware = require('../middleware/permission.middleware');
 const validateMiddleware = require('../middleware/validate.middleware');
 const rateLimitMiddleware = require('../middleware/rateLimit.middleware');
 
+const userReadPermission = (req, res, next) => {
+    const targetUserId = req.params.id || req.query.id;
+    const currentUserId = req.user?.userId || req.user?.id;
+    
+    // Allow users to read their own profile without explicit USERS:READ permission
+    if (targetUserId && currentUserId && targetUserId === currentUserId) {
+        return next();
+    }
+    
+    // Otherwise, require explicit USERS:READ permission
+    return permissionMiddleware('USERS', 'READ')(req, res, next);
+};
+
 const requireSameOrg = (req, res, next) => {
     const { orgId } = req.params;
 
@@ -53,7 +66,7 @@ router.get(
     '/:id',
     [param('id').matches(/^[0-9a-fA-F-]{36}$/).withMessage('Valid user ID is required')],
     validateMiddleware,
-    permissionMiddleware('USERS', 'READ'),
+    userReadPermission,
     userController.getUserById
 );
 
@@ -65,7 +78,7 @@ router.get(
     ],
     validateMiddleware,
     requireSameOrg,
-    permissionMiddleware('USERS', 'READ'),
+    userReadPermission,
     userController.getUserById
 );
 

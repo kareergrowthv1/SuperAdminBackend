@@ -6,7 +6,11 @@ const logger = require('../utils/logger');
 class UserService {
     async getUsers(organizationId) {
         try {
-            const sql = `SELECT u.id, u.email, u.first_name, u.last_name, u.phone_number, u.is_active, u.email_verified, u.account_locked, u.last_login_at, u.created_at, r.id as role_id, r.name as role_name FROM users u INNER JOIN roles r ON u.role_id = r.id WHERE u.organization_id = ? AND u.deleted_at IS NULL ORDER BY u.created_at DESC`;
+            const sql = `SELECT u.id, u.email, u.first_name, u.last_name, u.phone_number, u.is_active, u.is_subscribed, u.is_hold, u.is_college, u.email_verified, u.account_locked, u.last_login_at, u.created_at, r.id as role_id, r.name as role_name 
+                         FROM users u 
+                         INNER JOIN roles r ON u.role_id = r.id 
+                         WHERE u.organization_id = ? AND u.deleted_at IS NULL 
+                         ORDER BY u.created_at DESC`;
             return await db.query(sql, [organizationId]);
         } catch (error) {
             logger.error('Get users failed', { error: error.message });
@@ -41,7 +45,7 @@ class UserService {
                 roleId: user.role_id,
                 roleName: user.role_name,
                 roleVersion: user.role_version,
-                isCollege: user.role_code === 'ADMIN',
+                isCollege: !!user.is_college,
                 lastLoginAt: user.last_login_at,
                 lastLoginIp: user.last_login_ip,
                 lastLoginDevice: user.last_login_device

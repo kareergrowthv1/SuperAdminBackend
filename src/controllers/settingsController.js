@@ -355,6 +355,73 @@ class SettingsController {
             res.status(500).json({ success: false, message: 'Failed to save email config' });
         }
     }
+    
+    /**
+     * Get WhatsApp (Interakt/Generic) config from settings table.
+     */
+    async getWhatsappConfig(req, res) {
+        try {
+            const rows = await query('SELECT `value` FROM settings WHERE `key` = ?', ['whatsappSettings']);
+            const defaults = {
+                enabled: false,
+                apiUrl: '',
+                apiKey: '',
+                templateName: '',
+                fromNumber: '',
+                languageCode: 'en'
+            };
+            if (rows.length > 0 && rows[0].value) {
+                const data = _parseJson(rows[0].value, defaults);
+                res.status(200).json({
+                    success: true,
+                    data: {
+                        enabled: Boolean(data.enabled),
+                        apiUrl: String(data.apiUrl || '').trim(),
+                        apiKey: String(data.apiKey || '').trim(),
+                        templateName: String(data.templateName || '').trim(),
+                        fromNumber: String(data.fromNumber || '').trim(),
+                        languageCode: String(data.languageCode || 'en').trim()
+                    }
+                });
+            } else {
+                res.status(200).json({ success: true, data: defaults });
+            }
+        } catch (error) {
+            console.error('Failed to fetch WhatsApp config:', error);
+            res.status(500).json({ success: false, message: 'Failed to fetch WhatsApp config' });
+        }
+    }
+
+    /**
+     * Save WhatsApp (Interakt/Generic) config to settings table.
+     */
+    async saveWhatsappConfig(req, res) {
+        try {
+            if (!(await _ensureSuperadmin(req, res))) return;
+            const b = req.body || {};
+            const payload = {
+                enabled: Boolean(b.enabled),
+                apiUrl: String(b.apiUrl || '').trim(),
+                apiKey: String(b.apiKey || '').trim(),
+                templateName: String(b.templateName || '').trim(),
+                fromNumber: String(b.fromNumber || '').trim(),
+                languageCode: String(b.languageCode || 'en').trim()
+            };
+            const val = JSON.stringify(payload);
+            await query(
+                'INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = ?, updated_at = CURRENT_TIMESTAMP',
+                ['whatsappSettings', val, val]
+            );
+            res.status(200).json({
+                success: true,
+                message: 'WhatsApp config saved',
+                data: payload
+            });
+        } catch (error) {
+            console.error('Failed to save WhatsApp config:', error);
+            res.status(500).json({ success: false, message: 'Failed to save WhatsApp config' });
+        }
+    }
 
     async saveAiConfig(req, res) {
         try {
