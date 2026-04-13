@@ -29,9 +29,11 @@ class OrganizationService {
 
                 const [systemAdminRole] = await connection.execute('SELECT id FROM roles WHERE name = ? AND organization_id IS NULL LIMIT 1', ['ADMIN']);
                 if (systemAdminRole.length > 0) {
-                    const [permissions] = await connection.execute('SELECT feature_id, permissions FROM role_feature_permissions WHERE role_id = ?', [systemAdminRole[0].id]);
+                    const [permissions] = await connection.execute('SELECT feature_id, permissions, data_scope, dashboard_options FROM role_feature_permissions WHERE role_id = ?', [systemAdminRole[0].id]);
                     for (const perm of permissions) {
-                        await connection.execute(`INSERT INTO role_feature_permissions (id, role_id, feature_id, permissions, created_at) VALUES (?, ?, ?, ?, NOW())`, [uuidv4(), adminRoleId, perm.feature_id, perm.permissions]);
+                        // Default to 'ALL' for organizational ADMIN role to satisfy USER requirement
+                        const scope = perm.data_scope || 'ALL';
+                        await connection.execute(`INSERT INTO role_feature_permissions (id, role_id, feature_id, permissions, data_scope, dashboard_options, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())`, [uuidv4(), adminRoleId, perm.feature_id, perm.permissions, scope, perm.dashboard_options]);
                     }
                 }
             } else {

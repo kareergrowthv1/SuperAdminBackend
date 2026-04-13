@@ -64,8 +64,49 @@ const getLocations = async (req, res, next) => {
     }
 };
 
+const getJobById = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const result = await jobService.getJobById(id);
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const createJob = async (req, res, next) => {
+    try {
+        const result = await jobService.createJob(req.body);
+        res.status(201).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const updateJob = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const result = await jobService.updateJob(id, req.body);
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getJobs,
+    getJobById,
+    createJob,
+    updateJob,
     updateJobStatus,
     getLocations
 };

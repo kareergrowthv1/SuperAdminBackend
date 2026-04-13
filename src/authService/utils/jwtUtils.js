@@ -33,6 +33,9 @@ const generateAccessToken = (user, options = {}) => {
             roleName: options.roleName || user.roleCode || 'USER', // Role name
             roleVersion: user.roleVersion || 1,     // Role version for invalidation
             isPlatformAdmin: user.is_platform_admin || false,
+            isCollege: !!user.is_college,
+            isSubscribed: !!user.is_subscribed,
+            isHold: !!user.is_hold,
             permissions: options.permissions || [],  // User permissions array
             iat: now,                              // Issued at
             exp: now + (config.jwt.expirationMinutes * 60) // Expiration (30 mins)

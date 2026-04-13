@@ -141,8 +141,157 @@ const getUniqueLocations = async (search = '') => {
     return rows.map(row => row.location).filter(Boolean);
 };
 
+/**
+ * Get a single job by ID
+ */
+const getJobById = async (jobId) => {
+    if (!jobId) throw new Error('Job ID is required');
+    
+    const rows = await db.query(
+        `SELECT 
+            BIN_TO_UUID(id) as id, 
+            client_schema, 
+            client_name, 
+            admin_user_id, 
+            admin_email, 
+            title, 
+            company_logo,
+            header_image,
+            description,
+            company_description,
+            requirements,
+            social_links,
+            position_type, 
+            location, 
+            experience_range,
+            salary_range,
+            is_it,
+            applications_count, 
+            status, 
+            created_at 
+        FROM jobs 
+        WHERE id = UUID_TO_BINARY(?)`,
+        [jobId]
+    );
+
+    if (rows.length === 0) throw new Error('Job not found');
+    return rows[0];
+};
+
+/**
+ * Create a new job
+ */
+const createJob = async (jobData) => {
+    const {
+        client_schema = 'default',
+        client_name = 'Systemmindz',
+        admin_user_id,
+        admin_email,
+        title,
+        company_logo,
+        header_image,
+        description,
+        company_description,
+        requirements,
+        social_links,
+        position_type = 'Full-time',
+        location,
+        experience_range,
+        salary_range,
+        is_it = 1,
+        status = 'OPEN'
+    } = jobData;
+
+    if (!title) throw new Error('Job title is required');
+
+    const result = await db.query(
+        `INSERT INTO jobs (
+            id, client_schema, client_name, admin_user_id, admin_email,
+            title, company_logo, header_image, description, company_description,
+            requirements, social_links, position_type, location, experience_range,
+            salary_range, is_it, status, created_at, updated_at
+        ) VALUES (
+            UUID_TO_BINARY(UUID()), ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, NOW(), NOW()
+        )`,
+        [
+            client_schema, client_name, admin_user_id, admin_email,
+            title, company_logo, header_image, description, company_description,
+            requirements, social_links ? JSON.stringify(social_links) : null, 
+            position_type, location, experience_range,
+            salary_range, is_it, status
+        ]
+    );
+
+    return { id: result.insertId, message: 'Job created successfully' };
+};
+
+/**
+ * Update an existing job
+ */
+const updateJob = async (jobId, jobData) => {
+    if (!jobId) throw new Error('Job ID is required');
+
+    const {
+        title,
+        company_logo,
+        header_image,
+        description,
+        company_description,
+        requirements,
+        social_links,
+        position_type,
+        location,
+        experience_range,
+        salary_range,
+        is_it,
+        status
+    } = jobData;
+
+    const fields = [];
+    const params = [];
+
+    const updateMap = {
+        title,
+        company_logo,
+        header_image,
+        description,
+        company_description,
+        requirements,
+        social_links: social_links ? JSON.stringify(social_links) : undefined,
+        position_type,
+        location,
+        experience_range,
+        salary_range,
+        is_it,
+        status
+    };
+
+    Object.entries(updateMap).forEach(([key, value]) => {
+        if (value !== undefined) {
+            fields.push(`${key} = ?`);
+            params.push(value);
+        }
+    });
+
+    if (fields.length === 0) return { message: 'No fields to update' };
+
+    fields.push('updated_at = NOW()');
+    params.push(jobId);
+
+    const query = `UPDATE jobs SET ${fields.join(', ')} WHERE id = UUID_TO_BINARY(?)`;
+    await db.query(query, params);
+
+    return getJobById(jobId);
+};
+
 module.exports = {
     getJobs,
+    getJobById,
+    createJob,
+    updateJob,
     updateJobStatus,
     getUniqueLocations
 };

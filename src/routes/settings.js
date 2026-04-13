@@ -9,6 +9,9 @@ router.post('/ai-config', settingsController.saveAiConfig);
 router.get('/email', settingsController.getEmailConfig);
 router.put('/email', settingsController.saveEmailConfig);
 
+router.get('/whatsapp', settingsController.getWhatsappConfig);
+router.put('/whatsapp', settingsController.saveWhatsappConfig);
+
 router.get('/notifications', settingsController.getNotifications);
 router.post('/notifications', settingsController.saveNotifications);
 

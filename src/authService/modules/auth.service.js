@@ -175,12 +175,11 @@ class AuthService {
                     roleCode: user.roleCode,
                     isAdmin: user.roleCode === 'SUPERADMIN' ? true : user.is_admin,
                     isPlatformAdmin: user.roleCode === 'SUPERADMIN' ? true : user.is_platform_admin,
-                    isActive: user.roleCode === 'SUPERADMIN' ? true : !!user.is_active,
-                    isSubscribed: user.roleCode === 'SUPERADMIN' ? true : !!user.is_subscribed,
-                    isHold: user.roleCode === 'SUPERADMIN' ? false : !!user.is_hold,
+                    isCollege: !!user.is_college,
                     client: user.client
                 }
             };
+            return result;
         } catch (error) {
             logger.error('Login failed', { error: error.message, email, organizationId });
             throw error;
@@ -236,8 +235,19 @@ class AuthService {
                 );
                 if (candidates.length === 0) throw new Error('Candidate not found or inactive');
                 const candidate = candidates[0];
-                const tokenPair = await jwtUtils.generateCandidateTokenPair(candidate, { tenantId: DB_NAME });
-                logger.info('Candidate token refreshed', { candidateId: candidate.id });
+
+                // Resolve correct tenantId
+                let resolvedTenantId = DB_NAME;
+                if (candidate.organization_id) {
+                    const orgUsers = await db.query(
+                        'SELECT client FROM users WHERE organization_id = ? AND client IS NOT NULL LIMIT 1',
+                        [candidate.organization_id]
+                    );
+                    if (orgUsers.length > 0) resolvedTenantId = orgUsers[0].client;
+                }
+
+                const tokenPair = await jwtUtils.generateCandidateTokenPair(candidate, { tenantId: resolvedTenantId });
+                logger.info('Candidate token refreshed', { candidateId: candidate.id, tenantId: resolvedTenantId });
                 return {
                     accessToken: tokenPair.accessToken,
                     refreshToken: tokenPair.refreshToken,
@@ -247,7 +257,8 @@ class AuthService {
                         email: candidate.email,
                         username: candidate.email || candidate.mobile_number,
                         organizationId: candidate.organization_id,
-                        roleCode: 'CANDIDATE'
+                        roleCode: 'CANDIDATE',
+                        client: resolvedTenantId
                     }
                 };
             }
@@ -264,7 +275,24 @@ class AuthService {
             const user = users[0];
             const accessToken = jwtUtils.generateAccessToken(user);
             logger.info('Access token refreshed', { userId: user.id, organizationId: user.organization_id });
-            return { accessToken };
+            return { 
+                accessToken,
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    username: user.username,
+                    organizationId: user.organization_id,
+                    roleId: user.role_id,
+                    roleCode: user.roleCode,
+                    isAdmin: user.is_admin,
+                    isPlatformAdmin: user.is_platform_admin,
+                    isActive: user.roleCode === 'SUPERADMIN' ? true : !!user.is_active,
+                    isSubscribed: user.roleCode === 'SUPERADMIN' ? true : !!user.is_subscribed,
+                    isHold: user.roleCode === 'SUPERADMIN' ? false : !!user.is_hold,
+                    isCollege: !!user.is_college,
+                    client: user.client
+                }
+            };
         } catch (error) {
             logger.error('Token refresh failed', { error: error.message });
             throw error;
@@ -316,6 +344,7 @@ class AuthService {
                         id: candidate.id,
                         email: candidate.email,
                         username: candidate.email || candidate.mobile_number,
+                        name: candidate.name,
                         organizationId: candidate.organization_id,
                         roleCode: 'CANDIDATE',
                         isAdmin: false,
@@ -390,6 +419,7 @@ class AuthService {
                     isActive: user.roleCode === 'SUPERADMIN' ? true : !!user.is_active,
                     isSubscribed: user.roleCode === 'SUPERADMIN' ? true : !!user.is_subscribed,
                     isHold: user.roleCode === 'SUPERADMIN' ? false : !!user.is_hold,
+                    isCollege: !!user.is_college,
                     client: user.client
                 }
             };
@@ -399,20 +429,32 @@ class AuthService {
         }
     }
 
-    async changePassword(userId, oldPassword, newPassword) {
+    async changePassword(data) {
+        const { userId, oldPassword, newPassword, subjectType } = data;
         try {
-            const users = await db.query('SELECT password FROM users WHERE id = ?', [userId]);
-            if (users.length === 0) throw new Error('User not found');
+            const table = (subjectType === 'candidate') ? 'candidate_login' : 'users';
+            
+            const rows = await db.query(`SELECT password_hash FROM ${table} WHERE id = ?`, [userId]);
+            if (rows.length === 0) {
+                const error = new Error('User not found');
+                error.status = 404;
+                throw error;
+            }
 
-            const passwordMatch = await bcrypt.compare(oldPassword, users[0].password);
-            if (!passwordMatch) throw new Error('Current password is incorrect');
+            const passwordMatch = await bcrypt.compare(oldPassword, rows[0].password_hash);
+            if (!passwordMatch) {
+                const error = new Error('Current password is incorrect');
+                error.status = 401;
+                throw error;
+            }
 
-            const hashedPassword = await bcrypt.hash(newPassword, config.security.bcryptRounds);
-            await db.query('UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?', [hashedPassword, userId]);
-            logger.info('Password changed successfully', { userId });
+            const hashedPassword = await bcrypt.hash(newPassword, config.security.bcryptRounds || 12);
+            await db.query(`UPDATE ${table} SET password_hash = ?, updated_at = NOW() WHERE id = ?`, [hashedPassword, userId]);
+            
+            logger.info('Password changed successfully', { userId, subjectType });
             return true;
         } catch (error) {
-            logger.error('Password change failed', { error: error.message, userId });
+            logger.error('Password change failed', { error: error.message, userId, subjectType });
             throw error;
         }
     }
@@ -470,8 +512,20 @@ class AuthService {
         const passwordMatch = await bcrypt.compare(password, candidate.password_hash);
         if (!passwordMatch) throw new Error('Invalid credentials');
 
+        // Resolve correct tenantId based on organization's client mapping
+        let resolvedTenantId = DB_NAME;
+        if (candidate.organization_id) {
+            const orgUsers = await db.query(
+                'SELECT client FROM users WHERE organization_id = ? AND client IS NOT NULL LIMIT 1',
+                [candidate.organization_id]
+            );
+            if (orgUsers.length > 0) {
+                resolvedTenantId = orgUsers[0].client;
+            }
+        }
+
         const tokenPair = await jwtUtils.generateCandidateTokenPair(candidate, {
-            tenantId: DB_NAME
+            tenantId: resolvedTenantId
         });
         const xsrfToken = await xsrfUtils.generateXSRFToken({
             userId: candidate.id,
@@ -487,23 +541,25 @@ class AuthService {
             [context.ipAddress, candidate.id]
         ).catch(err => logger.error('Failed to update candidate last login', { err }));
 
-        logger.info('Candidate logged in', { candidateId: candidate.id, email: candidate.email, mobile: candidate.mobile_number });
+        logger.info('Candidate logged in', { candidateId: candidate.id, email: candidate.email, mobile: candidate.mobile_number, tenantId: resolvedTenantId });
 
         return {
             accessToken: tokenPair.accessToken,
             refreshToken: tokenPair.refreshToken,
             xsrfToken: xsrfToken.token,
-            tenantId: DB_NAME,
+            tenantId: resolvedTenantId,
             permissions: [],
             user: {
                 id: candidate.id,
                 email: candidate.email,
                 username: candidate.email || candidate.mobile_number,
+                name: candidate.name,
                 organizationId: candidate.organization_id,
                 roleCode: 'CANDIDATE',
                 isAdmin: false,
                 isPlatformAdmin: false,
-                isActive: true
+                isActive: true,
+                client: resolvedTenantId
             }
         };
     }
@@ -590,7 +646,7 @@ class AuthService {
             throw new Error('Email or mobile number is required');
         }
 
-        const orgId = organizationId || process.env.CANDIDATE_DEFAULT_ORGANIZATION_ID || null;
+        const orgId = (organizationId !== undefined && organizationId !== '') ? organizationId : (process.env.CANDIDATE_DEFAULT_ORGANIZATION_ID || null);
 
         const existingByEmail = email ? await this.findCandidateByEmailOrPhone(email) : null;
         if (existingByEmail) throw new Error('Already registered with this email. Please sign in with your password.');
@@ -634,7 +690,17 @@ class AuthService {
         const candidate = await this.findCandidateByEmailOrPhone(normEmail || normMobile || email || mobile_number);
         if (!candidate) throw new Error('Registration failed');
 
-        const tokenPair = await jwtUtils.generateCandidateTokenPair(candidate, { tenantId: DB_NAME });
+        // Resolve correct tenantId
+        let resolvedTenantId = DB_NAME;
+        if (candidate.organization_id) {
+            const orgUsers = await db.query(
+                'SELECT client FROM users WHERE organization_id = ? AND client IS NOT NULL LIMIT 1',
+                [candidate.organization_id]
+            );
+            if (orgUsers.length > 0) resolvedTenantId = orgUsers[0].client;
+        }
+
+        const tokenPair = await jwtUtils.generateCandidateTokenPair(candidate, { tenantId: resolvedTenantId });
         const xsrfToken = await xsrfUtils.generateXSRFToken({
             userId: candidate.id,
             organizationId: candidate.organization_id,
@@ -644,7 +710,7 @@ class AuthService {
             userAgent: context.userAgent
         });
 
-        logger.info('Candidate registered', { candidateId: candidate.id, email: candidate.email, mobile: candidate.mobile_number });
+        logger.info('Candidate registered', { candidateId: candidate.id, email: candidate.email, mobile: candidate.mobile_number, tenantId: resolvedTenantId });
 
         return {
             accessToken: tokenPair.accessToken,
@@ -654,24 +720,271 @@ class AuthService {
                 id: candidate.id,
                 email: candidate.email,
                 username: candidate.email || candidate.mobile_number,
+                name: candidate.name,
                 organizationId: candidate.organization_id,
-                roleCode: 'CANDIDATE'
+                roleCode: 'CANDIDATE',
+                client: resolvedTenantId
             }
         };
     }
 
     /**
-     * Forgot password for candidate: lookup by email/phone and send reset (stub: always return success for security).
+     * Forgot password for candidate: lookup by email/phone and send OTP for reset.
      */
     async candidateForgotPassword(emailOrPhone) {
         const key = (emailOrPhone || '').trim();
         if (!key) throw new Error('Email or phone is required');
+        
         const candidate = await this.findCandidateByEmailOrPhone(key);
-        if (candidate && isEmail(key)) {
-            // TODO: generate reset token, send email with link
-            logger.info('Candidate forgot password requested', { candidateId: candidate.id, key: key.replace(/(?<=.{2})./g, '*') });
+        if (!candidate) {
+            // Return success even if not found for security, but don't send anything
+            return { message: 'If an account exists, you will receive reset instructions.' };
         }
-        // Always return success to avoid leaking whether account exists
+
+        const otp = otpStore.sendAndStore(key);
+        if (isEmail(key)) {
+            const subject = 'Your password reset code – KareerGrowth';
+            const htmlBody = `
+                <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                    <h2 style="color: #ea580c;">Password Reset Request</h2>
+                    <p>You requested to reset your password. Please use the following code:</p>
+                    <div style="background: #fff7ed; padding: 20px; text-align: center; border-radius: 10px; margin: 20px 0;">
+                        <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #ea580c;">${otp}</span>
+                    </div>
+                    <p>This code is valid for 5 minutes. If you did not request this, please ignore this email.</p>
+                </div>
+            `;
+            await emailService.sendEmail(key, subject, htmlBody);
+        }
+        
+        logger.info('Candidate forgot password OTP sent', { candidateId: candidate.id, key: key.replace(/(?<=.{2})./g, '*') });
+        return { message: 'OTP sent successfully', sent: true, otp: process.env.NODE_ENV === 'production' ? undefined : otp };
+    }
+
+    /**
+     * Reset password for candidate after OTP verification.
+     */
+    async candidateResetPassword(emailOrPhone, otp, newPassword) {
+        const key = (emailOrPhone || '').trim();
+        if (!key || !otp || !newPassword) {
+            throw new Error('Email/phone, OTP and new password are required');
+        }
+
+        const ok = otpStore.verify(key, String(otp).trim());
+        if (!ok) throw new Error('Incorrect or expired OTP');
+
+        const candidate = await this.findCandidateByEmailOrPhone(key);
+        if (!candidate) throw new Error('Candidate not found');
+
+        const hashedPassword = await bcrypt.hash(newPassword, config.security.bcryptRounds || 10);
+        await db.query(
+            'UPDATE candidate_login SET password_hash = ?, updated_at = NOW() WHERE id = ?',
+            [hashedPassword, candidate.id]
+        );
+
+        logger.info('Candidate password reset successful', { candidateId: candidate.id });
+        return { success: true, message: 'Password reset successful' };
+    }
+
+    /**
+     * Centralized GitHub login for Candidates.
+     * Links existing accounts by email or creates new ones.
+     */
+    async loginWithGithub(email, name, context = {}) {
+        const normEmail = (email || '').trim().toLowerCase();
+        if (!normEmail) throw new Error('Email is required for GitHub login');
+
+        // 1. Check if they already have a login record in auth_db.candidate_login
+        let candidate = await this.findCandidateByEmailOrPhone(normEmail);
+
+        if (!candidate) {
+            logger.info('GitHub user not found in candidate_login, checking college_candidates profile', { email: normEmail });
+            
+            // 2. Check if they exist in candidates_db.college_candidates (via AdminBackend)
+            const { candidate: profile } = await this.candidateGetDetails(normEmail);
+            
+            const organizationId = profile ? profile.organization_id : (process.env.CANDIDATE_DEFAULT_ORGANIZATION_ID || null);
+            const candidateId = uuidv4();
+            const placeholderPassword = await bcrypt.hash(uuidv4(), config.security.bcryptRounds || 10);
+
+            // 3. Create entry in candidate_login
+            await db.query(
+                `INSERT INTO candidate_login (id, email, password_hash, name, organization_id, is_active, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, true, NOW(), NOW())`,
+                [candidateId, normEmail, placeholderPassword, name, organizationId]
+            );
+
+            // 4. If they were NOT in college_candidates, sync them now
+            if (!profile) {
+                const candidateServiceUrl = config.candidateServiceUrl || process.env.CANDIDATE_SERVICE_URL;
+                const internalToken = config.service.internalToken || process.env.INTERNAL_SERVICE_TOKEN;
+                if (candidateServiceUrl && internalToken) {
+                    try {
+                        const axios = require('axios');
+                        await axios.post(
+                            `${candidateServiceUrl.replace(/\/$/, '')}/candidates/add`,
+                            {
+                                name: name,
+                                email: normEmail,
+                                organizationId: organizationId,
+                                createdBy: 'GitHub SSO'
+                            },
+                            { headers: { 'Content-Type': 'application/json', 'X-Service-Token': internalToken }, timeout: 5000 }
+                        );
+                    } catch (err) {
+                        logger.warn('Failed to sync new GitHub candidate to CandidateBackend', { error: err.message, email: normEmail });
+                    }
+                }
+            }
+
+            candidate = await this.findCandidateByEmailOrPhone(normEmail);
+        }
+
+        if (!candidate) throw new Error('Failed to establish candidate profile during GitHub login');
+
+        // 5. Generate session tokens (consistent with candidateLogin)
+        let resolvedTenantId = DB_NAME;
+        if (candidate.organization_id) {
+            const orgUsers = await db.query(
+                'SELECT client FROM users WHERE organization_id = ? AND client IS NOT NULL LIMIT 1',
+                [candidate.organization_id]
+            );
+            if (orgUsers.length > 0) resolvedTenantId = orgUsers[0].client;
+        }
+
+        const tokenPair = await jwtUtils.generateCandidateTokenPair(candidate, { tenantId: resolvedTenantId });
+        const xsrfToken = await xsrfUtils.generateXSRFToken({
+            userId: candidate.id,
+            organizationId: candidate.organization_id,
+            subjectType: 'candidate',
+            sessionId: context.sessionId,
+            ipAddress: context.ipAddress,
+            userAgent: context.userAgent
+        });
+
+        // Update last login
+        db.query(
+            'UPDATE candidate_login SET last_login_at = NOW(), last_login_ip = ? WHERE id = ?',
+            [context.ipAddress, candidate.id]
+        ).catch(err => logger.error('Failed to update candidate last login (GitHub)', { err }));
+
+        logger.info('Candidate logged in via GitHub', { candidateId: candidate.id, email: candidate.email });
+
+        return {
+            accessToken: tokenPair.accessToken,
+            refreshToken: tokenPair.refreshToken,
+            xsrfToken: xsrfToken.token,
+            user: {
+                id: candidate.id,
+                email: candidate.email,
+                username: candidate.email,
+                name: candidate.name,
+                organizationId: candidate.organization_id,
+                roleCode: 'CANDIDATE',
+                client: resolvedTenantId
+            }
+        };
+    }
+
+    /**
+     * Generic SSO login for Candidates (Google, Microsoft, etc.).
+     * Links existing accounts by email or creates new ones.
+     */
+    async loginWithSso(payload, context = {}) {
+        const { email, name, ssoProvider, ssoId, profileUrl } = payload;
+        const normEmail = (email || '').trim().toLowerCase();
+        if (!normEmail) throw new Error(`${ssoProvider} login requires an email`);
+
+        // 1. Check if they already have a login record in auth_db.candidate_login
+        let candidate = await this.findCandidateByEmailOrPhone(normEmail);
+
+        if (!candidate) {
+            logger.info(`${ssoProvider} user not found in candidate_login, checking college_candidates profile`, { email: normEmail });
+            
+            // 2. Check if they exist in candidates_db.college_candidates (via AdminBackend)
+            const { candidate: profile } = await this.candidateGetDetails(normEmail);
+            
+            const organizationId = profile ? profile.organization_id : (process.env.CANDIDATE_DEFAULT_ORGANIZATION_ID || null);
+            const candidateId = uuidv4();
+            const placeholderPassword = await bcrypt.hash(uuidv4(), config.security.bcryptRounds || 10);
+
+            // 3. Create entry in candidate_login
+            await db.query(
+                `INSERT INTO candidate_login (id, email, password_hash, name, organization_id, is_active, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, true, NOW(), NOW())`,
+                [candidateId, normEmail, placeholderPassword, name, organizationId]
+            );
+
+            // 4. If they were NOT in college_candidates, sync them now
+            if (!profile) {
+                const candidateServiceUrl = config.candidateServiceUrl || process.env.CANDIDATE_SERVICE_URL;
+                const internalToken = config.service.internalToken || process.env.INTERNAL_SERVICE_TOKEN;
+                if (candidateServiceUrl && internalToken) {
+                    try {
+                        const axios = require('axios');
+                        await axios.post(
+                            `${candidateServiceUrl.replace(/\/$/, '')}/candidates/add`,
+                            {
+                                name: name,
+                                email: normEmail,
+                                organizationId: organizationId,
+                                createdBy: `${ssoProvider} SSO`
+                            },
+                            { headers: { 'Content-Type': 'application/json', 'X-Service-Token': internalToken }, timeout: 5000 }
+                        );
+                    } catch (err) {
+                        logger.warn(`Failed to sync new ${ssoProvider} candidate to CandidateBackend`, { error: err.message, email: normEmail });
+                    }
+                }
+            }
+
+            candidate = await this.findCandidateByEmailOrPhone(normEmail);
+        }
+
+        if (!candidate) throw new Error(`Failed to establish candidate profile during ${ssoProvider} login`);
+
+        // 5. Generate session tokens (consistent with candidateLogin)
+        let resolvedTenantId = DB_NAME;
+        if (candidate.organization_id) {
+            const orgUsers = await db.query(
+                'SELECT client FROM users WHERE organization_id = ? AND client IS NOT NULL LIMIT 1',
+                [candidate.organization_id]
+            );
+            if (orgUsers.length > 0) resolvedTenantId = orgUsers[0].client;
+        }
+
+        const tokenPair = await jwtUtils.generateCandidateTokenPair(candidate, { tenantId: resolvedTenantId });
+        const xsrfToken = await xsrfUtils.generateXSRFToken({
+            userId: candidate.id,
+            organizationId: candidate.organization_id,
+            subjectType: 'candidate',
+            sessionId: context.sessionId,
+            ipAddress: context.ipAddress,
+            userAgent: context.userAgent
+        });
+
+        // Update last login
+        db.query(
+            'UPDATE candidate_login SET last_login_at = NOW(), last_login_ip = ? WHERE id = ?',
+            [context.ipAddress, candidate.id]
+        ).catch(err => logger.error(`Failed to update candidate last login (${ssoProvider})`, { err }));
+
+        logger.info(`Candidate logged in via ${ssoProvider}`, { candidateId: candidate.id, email: candidate.email });
+
+        return {
+            accessToken: tokenPair.accessToken,
+            refreshToken: tokenPair.refreshToken,
+            xsrfToken: xsrfToken.token,
+            user: {
+                id: candidate.id,
+                email: candidate.email,
+                username: candidate.email,
+                name: candidate.name,
+                organizationId: candidate.organization_id,
+                roleCode: 'CANDIDATE',
+                client: resolvedTenantId
+            }
+        };
     }
 }
 

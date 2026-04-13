@@ -16,6 +16,10 @@ const creditsRoutes = require('./routes/credits');
 const settingsRoutes = require('./routes/settings');
 const plansRoutes = require('./routes/plans');
 const jobRoutes = require('./routes/jobRoutes');
+const adminPlansRoutes = require('./routes/admin_plans');
+const discountsRoutes = require('./routes/discounts');
+const reportLevelsRoutes = require('./routes/report_levels');
+const resumeTemplatesRoutes = require('./routes/resumeTemplates');
 
 // Auth service (merged): load services so globals are set, then routes
 require('./authService/services');
@@ -25,6 +29,10 @@ const roleRoutes = require('./authService/routes/roles');
 const permissionRoutes = require('./authService/routes/permissions');
 const organizationFeaturesRoutes = require('./authService/routes/organizationFeatures');
 const authHealthRoutes = require('./authService/routes/health');
+const githubAuthRoutes = require('./authService/routes/github');
+const googleAuthRoutes = require('./authService/routes/google');
+const microsoftAuthRoutes = require('./authService/routes/microsoft');
+const linkedinAuthRoutes = require('./authService/routes/linkedin');
 const authController = require('./authService/controllers/authController');
 const rateLimitMiddleware = require('./authService/middleware/rateLimit.middleware');
 
@@ -89,6 +97,10 @@ app.use('/', authHealthRoutes);
 // Public auth: refresh token (no X-Service-Token required; gateway calls this with cookie)
 const publicAuthRouter = express.Router();
 publicAuthRouter.post('/refresh', rateLimitMiddleware.auth, (req, res, next) => authController.refreshToken(req, res, next));
+publicAuthRouter.use('/github', githubAuthRoutes);
+publicAuthRouter.use('/google', googleAuthRoutes);
+publicAuthRouter.use('/microsoft', microsoftAuthRoutes);
+publicAuthRouter.use('/linkedin', linkedinAuthRoutes);
 app.use('/auth-session', publicAuthRouter);
 
 app.use(serviceAuth(config.service.internalToken));
@@ -109,7 +121,11 @@ app.use('/superadmin/subscriptions', subscriptionRoutes);
 app.use('/superadmin/credits', creditsRoutes);
 app.use('/superadmin/settings', settingsRoutes);
 app.use('/superadmin/plans', plansRoutes);
+app.use('/superadmin/admin-plans', adminPlansRoutes);
+app.use('/superadmin/discounts', discountsRoutes);
 app.use('/superadmin/jobs', jobRoutes);
+app.use('/superadmin/report-levels', reportLevelsRoutes);
+app.use('/superadmin/resume', resumeTemplatesRoutes);
 
 
 app.use(errorMiddleware);

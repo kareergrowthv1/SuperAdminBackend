@@ -887,7 +887,7 @@ const getAdminCreditHistory = async (adminId) => {
 
 const getSystemRoles = async () => {
     const roles = await db.authQuery(
-        `SELECT id, code, name FROM auth_db.roles WHERE is_system = 1 AND code IN ('SUPERADMIN', 'ADMIN', 'ATS')`,
+        `SELECT id, code, name FROM auth_db.roles WHERE is_system = 1 AND LOWER(name) NOT LIKE '%candidate%'`,
         []
     );
     return roles;

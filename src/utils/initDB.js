@@ -221,8 +221,8 @@ const runMigrations = async () => {
         const defaultEmailSettings = JSON.stringify({
             enabled: true,
             apiUrl: 'https://api.zeptomail.in/v1.1/email',
-            apiKey: 'PHtE6r1fEL/ojGYn8hRR4vS7H5T1MY8s+O4zKFROsd1GDPEHF01TqI8pmmO2qRZ8AKRBEPOdwYpvtemYte2AITzoY21MWmqyqK3sx/VYSPOZsbq6x00at1sddEXaXI7ucdJt3C3Tv9rcNA==',
-            fromEmail: 'noreply@qwikhire.ai',
+            apiKey: 'PHtE6r0IQOrvjGN88EJTsaS6FpT1ZootrONmfwNH5YtCWPYATU1Vrtsrkz/mr0h8APgTHPObyIJv47rNtL+CdjnkPWpKDWqyqK3sx/VYSPOZsbq6x00atVobd0fVVIHoc9Fs1CTWuNjTNA==',
+            fromEmail: 'noreply@systemmindz.com',
             fromName: 'KareerGrowth'
         });
         await conn.query(
@@ -230,19 +230,35 @@ const runMigrations = async () => {
             [defaultEmailSettings]
         );
 
-        // Ensure candidate_plans table exists (GET /superadmin/plans)
-        const migrationPlansPath = path.join(__dirname, '../../schemas/migrations/002_candidate_plans.sql');
-        if (fs.existsSync(migrationPlansPath)) {
-            const planSql = fs
-                .readFileSync(migrationPlansPath, 'utf8')
-                .split('\n')
-                .filter((l) => !l.trim().startsWith('--'))
-                .join('\n')
-                .trim()
-                .replace(/;\s*$/, '');
-            if (planSql) {
-                await conn.query(planSql);
-                console.log('[InitDB] ✓ candidate_plans table ensured');
+        // Automated migrations from schemas/migrations folder
+        const migrationsDir = path.join(__dirname, '../../schemas/migrations');
+        if (fs.existsSync(migrationsDir)) {
+            const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+            for (const file of files) {
+                const filePath = path.join(migrationsDir, file);
+                console.log(`[InitDB] Executing migration: ${file}...`);
+                const rawSql = fs.readFileSync(filePath, 'utf8');
+                
+                // Split statements (similar to executeSchemaSql) to handle multiple commands in one file
+                const statements = rawSql
+                    .split('\n')
+                    .filter(line => !line.trim().startsWith('--') && line.trim().length > 0)
+                    .join('\n')
+                    .split(';')
+                    .map(s => s.trim())
+                    .filter(s => s.length > 0);
+
+                for (const statement of statements) {
+                    try {
+                        await conn.query(statement);
+                    } catch (err) {
+                        // Ignore "Table already exists" errors if they happen during re-run
+                        if (!err.message.includes('already exists')) {
+                            console.error(`[InitDB] Error in migration ${file}:`, err.message);
+                        }
+                    }
+                }
+                console.log(`[InitDB] ✓ Migration ${file} complete`);
             }
         }
 
