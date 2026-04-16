@@ -8,7 +8,12 @@
  */
 
 const mysql = require('mysql2/promise');
-require('dotenv').config();
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Load local overrides first, then fallback backup env.
+dotenv.config({ path: path.resolve(__dirname, '../../../../.env.local') });
+dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 
 const AUTH_DB_CONFIG = {
     host: process.env.AUTH_DB_HOST || 'localhost',

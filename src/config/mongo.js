@@ -2,9 +2,12 @@ const path = require('path');
 const dotenv = require('dotenv');
 const { MongoClient } = require('mongodb');
 
-dotenv.config();
+// Load local overrides first, then fallback backup env.
+dotenv.config({ path: path.resolve(__dirname, '../../.env.local') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 if (!process.env.MONGODB_URI) {
+  dotenv.config({ path: path.resolve(__dirname, '../../../CandidateBackend/.env.local') });
   dotenv.config({ path: path.resolve(__dirname, '../../../CandidateBackend/.env') });
 }
 
