@@ -270,7 +270,12 @@ class AuthService {
                 `SELECT u.*, r.version as roleVersion FROM users u INNER JOIN roles r ON u.role_id = r.id WHERE u.id = ? AND u.organization_id = ? AND u.is_active = true`,
                 [decoded.userId, decoded.organizationId]
             ) : await db.query(
-                `SELECT u.*, r.version as roleVersion FROM users u LEFT JOIN roles r ON u.role_id = r.id WHERE u.id = ? AND u.is_platform_admin = true AND u.is_active = true`,
+                `SELECT u.*, r.version as roleVersion, r.code as roleCode
+                 FROM users u
+                 LEFT JOIN roles r ON u.role_id = r.id
+                 WHERE u.id = ?
+                   AND u.is_active = true
+                   AND (u.is_platform_admin = true OR r.code = 'SUPERADMIN')`,
                 [decoded.userId]
             );
 
