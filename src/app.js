@@ -38,6 +38,9 @@ const rateLimitMiddleware = require('./authService/middleware/rateLimit.middlewa
 
 const app = express();
 
+// Render/Cloud proxies terminate TLS before Node; trust proxy so req.secure is accurate.
+app.set('trust proxy', 1);
+
 // CORS: from .env (comma-separated CORS_ORIGINS); fallback for dev when empty
 const DEFAULT_CORS_ORIGINS = [
     'http://localhost:4000', 'http://localhost:4001', 'http://localhost:4002', 'http://localhost:4003',
