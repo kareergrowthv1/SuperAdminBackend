@@ -349,8 +349,8 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS candidate_login (
     id CHAR(36) PRIMARY KEY COMMENT 'UUID generated in application',
-    email VARCHAR(255) NULL COMMENT 'Candidate email; NULL if registered with mobile only',
-    mobile_number VARCHAR(20) NULL COMMENT 'Candidate mobile; NULL if registered with email only',
+    email VARCHAR(255) NULL COMMENT 'Candidate email (NULL if registered with mobile only)',
+    mobile_number VARCHAR(20) NULL COMMENT 'Candidate mobile (NULL if registered with email only)',
     password_hash VARCHAR(255) NOT NULL COMMENT 'Bcrypt hashed',
     name VARCHAR(255) NOT NULL COMMENT 'Full name',
     
@@ -372,7 +372,7 @@ CREATE TABLE IF NOT EXISTS candidate_login (
     INDEX idx_candidate_login_email (email),
     INDEX idx_candidate_login_mobile (mobile_number),
     INDEX idx_candidate_login_org (organization_id)
-) ENGINE=INNODB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='Candidate portal logins; separate from users table';
+) ENGINE=INNODB CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='Candidate portal logins - separate from users table';
 
 -- ============================================================
 -- 10. Candidate Refresh Tokens Table
