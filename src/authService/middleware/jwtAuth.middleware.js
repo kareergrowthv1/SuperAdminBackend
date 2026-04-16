@@ -75,7 +75,9 @@ const jwtAuthMiddleware = async (req, res, next) => {
             };
             currentRoleVersion = decoded.roleVersion; // Candidates don't have versioned roles in the same way
         } else {
-            const sql = decoded.isPlatformAdmin ? `
+            const treatAsPlatformUser = Boolean(decoded.isPlatformAdmin) || !decoded.organizationId;
+
+            const sql = treatAsPlatformUser ? `
                 SELECT u.*, r.version as roleVersion, r.code as roleCode
                 FROM users u
                 LEFT JOIN roles r ON u.role_id = r.id
@@ -87,7 +89,7 @@ const jwtAuthMiddleware = async (req, res, next) => {
                 WHERE u.id = ? AND u.organization_id = ? AND u.is_active = true
             `;
 
-            const users = decoded.isPlatformAdmin
+            const users = treatAsPlatformUser
                 ? await db.query(sql, [decoded.userId])
                 : await db.query(sql, [decoded.userId, decoded.organizationId]);
 

@@ -32,7 +32,8 @@ const generateAccessToken = (user, options = {}) => {
             roleId: user.role_id,                   // Role ID
             roleName: options.roleName || user.roleCode || 'USER', // Role name
             roleVersion: user.roleVersion || 1,     // Role version for invalidation
-            isPlatformAdmin: user.is_platform_admin || false,
+            // SUPERADMIN role should behave as platform admin even if legacy flag is false.
+            isPlatformAdmin: Boolean(user.is_platform_admin) || (options.roleName || user.roleCode) === 'SUPERADMIN',
             isCollege: !!user.is_college,
             isSubscribed: !!user.is_subscribed,
             isHold: !!user.is_hold,
