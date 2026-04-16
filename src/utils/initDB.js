@@ -269,12 +269,36 @@ const runMigrations = async () => {
     }
 };
 
+const createCandidatesDatabase = async () => {
+    const tempPool = mysql.createPool({
+        host: config.database.host,
+        port: config.database.port,
+        user: config.database.user,
+        password: config.database.password,
+        waitForConnections: true,
+        connectionLimit: 1,
+        queueLimit: 0
+    });
+    try {
+        const conn = await tempPool.getConnection();
+        console.log('[InitDB] Creating candidates_db database...');
+        await conn.query(
+            `CREATE DATABASE IF NOT EXISTS \`candidates_db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+        );
+        console.log('[InitDB] ✓ candidates_db database created/verified');
+        conn.release();
+    } finally {
+        await tempPool.end();
+    }
+};
+
 const initializeSuperadminDB = async () => {
     try {
         console.log('[InitDB] Starting superadmin database initialization...');
 
         await createSuperadminDatabase();
         await executeSchemaSql();
+        await createCandidatesDatabase(); // ensure candidates_db exists before migration 009
         await runMigrations();   // ← safe column migration on every boot
 
         console.log('[InitDB] ✓ Superadmin database initialization complete');
