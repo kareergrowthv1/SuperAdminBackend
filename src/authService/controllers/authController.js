@@ -3,6 +3,16 @@ const xsrfUtils = require('../utils/xsrfUtils');
 const logger = require('../utils/logger');
 const config = require('../../config');
 
+function getCookieSecurityOptions(req) {
+    const forwardedProto = (req.headers['x-forwarded-proto'] || '').toString().split(',')[0].trim();
+    const isHttps = req.secure || forwardedProto === 'https';
+
+    return {
+        secure: isHttps,
+        sameSite: isHttps ? 'none' : 'lax'
+    };
+}
+
 class AuthController {
     async login(req, res, next) {
         try {
@@ -20,39 +30,35 @@ class AuthController {
             };
 
             const result = await authService.login(identifier, password, organizationId, context);
+            const cookieSecurity = getCookieSecurityOptions(req);
 
             res.cookie('refreshToken', result.refreshToken, {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                ...cookieSecurity,
                 maxAge: 7 * 24 * 60 * 60 * 1000
             });
 
             res.cookie('accessToken', result.accessToken, {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                ...cookieSecurity,
                 maxAge: 30 * 60 * 1000
             });
 
             res.cookie('XSRF-TOKEN', result.xsrfToken, {
                 httpOnly: false,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                ...cookieSecurity,
                 maxAge: 30 * 60 * 1000
             });
 
             res.cookie('tenantDb', result.user.client, {
                 httpOnly: false,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                ...cookieSecurity,
                 maxAge: 30 * 60 * 1000
             });
 
             res.cookie('organizationId', result.user.organizationId, {
                 httpOnly: false,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                ...cookieSecurity,
                 maxAge: 30 * 60 * 1000
             });
 
@@ -125,6 +131,7 @@ class AuthController {
             const xsrfHeaderToken = req.headers['x-xsrf-token'];
             const ipAddress = req.ip || req.connection.remoteAddress;
             const userAgent = req.headers['user-agent'];
+            const cookieSecurity = getCookieSecurityOptions(req);
 
             let result;
 
@@ -136,14 +143,12 @@ class AuthController {
                     if (result.isCandidate && result.refreshToken) {
                         res.cookie('refreshToken', result.refreshToken, {
                             httpOnly: true,
-                            secure: process.env.NODE_ENV === 'production',
-                            sameSite: 'strict',
+                            ...cookieSecurity,
                             maxAge: 7 * 24 * 60 * 60 * 1000
                         });
                         res.cookie('accessToken', result.accessToken, {
                             httpOnly: true,
-                            secure: process.env.NODE_ENV === 'production',
-                            sameSite: 'strict',
+                            ...cookieSecurity,
                             maxAge: 30 * 60 * 1000
                         });
                         return res.status(200).json({
@@ -184,22 +189,19 @@ class AuthController {
                 // Silent refresh returns new EVERYTHING (cookies included)
                 res.cookie('refreshToken', silentResult.refreshToken, {
                     httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
+                    ...cookieSecurity,
                     maxAge: 7 * 24 * 60 * 60 * 1000
                 });
 
                 res.cookie('accessToken', silentResult.accessToken, {
                     httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
+                    ...cookieSecurity,
                     maxAge: 30 * 60 * 1000
                 });
 
                 res.cookie('XSRF-TOKEN', silentResult.xsrfToken, {
                     httpOnly: false,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
+                    ...cookieSecurity,
                     maxAge: 30 * 60 * 1000
                 });
 
@@ -268,25 +270,23 @@ class AuthController {
             const ipAddress = req.ip || req.connection.remoteAddress;
             const userAgent = req.headers['user-agent'];
             const context = { ipAddress, userAgent, systemName, requestId: req.requestId };
+            const cookieSecurity = getCookieSecurityOptions(req);
 
             const result = await authService.candidateLogin(identifier, password, organizationId, context);
 
             res.cookie('refreshToken', result.refreshToken, {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                ...cookieSecurity,
                 maxAge: 7 * 24 * 60 * 60 * 1000
             });
             res.cookie('accessToken', result.accessToken, {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                ...cookieSecurity,
                 maxAge: 30 * 60 * 1000
             });
             res.cookie('XSRF-TOKEN', result.xsrfToken, {
                 httpOnly: false,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                ...cookieSecurity,
                 maxAge: 30 * 60 * 1000
             });
 
@@ -374,24 +374,22 @@ class AuthController {
             const ipAddress = req.ip || req.connection.remoteAddress;
             const userAgent = req.headers['user-agent'];
             const context = { ipAddress, userAgent, requestId: req.requestId };
+            const cookieSecurity = getCookieSecurityOptions(req);
             const result = await authService.candidateRegister(req.body, context);
 
             res.cookie('refreshToken', result.refreshToken, {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                ...cookieSecurity,
                 maxAge: 7 * 24 * 60 * 60 * 1000
             });
             res.cookie('accessToken', result.accessToken, {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                ...cookieSecurity,
                 maxAge: 30 * 60 * 1000
             });
             res.cookie('XSRF-TOKEN', result.xsrfToken, {
                 httpOnly: false,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
+                ...cookieSecurity,
                 maxAge: 30 * 60 * 1000
             });
 
