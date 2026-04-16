@@ -1,6 +1,8 @@
 const app = require('./app');
 const config = require('./config');
 const db = require('./config/db');
+const fs = require('fs');
+const https = require('https');
 const { initializeSuperadminDB, initializeAuthDB } = require('./utils/initDB');
 const syncService = require('./services/syncService');
 
@@ -50,6 +52,20 @@ const startServer = async () => {
         app.listen(config.port, () => {
             console.log(`Superadmin Backend (with Auth) running on port ${config.port}`);
         });
+
+        // Optional HTTPS listener for LAN sharing / secure browser access.
+        const sslKeyPath = process.env.SSL_KEY_PATH;
+        const sslCertPath = process.env.SSL_CERT_PATH;
+        const sslPort = Number(process.env.SSL_PORT || 0);
+        if (sslKeyPath && sslCertPath && sslPort > 0 && fs.existsSync(sslKeyPath) && fs.existsSync(sslCertPath)) {
+            const tlsOptions = {
+                key: fs.readFileSync(sslKeyPath),
+                cert: fs.readFileSync(sslCertPath),
+            };
+            https.createServer(tlsOptions, app).listen(sslPort, '0.0.0.0', () => {
+                console.log(`Superadmin Backend HTTPS running on port ${sslPort}`);
+            });
+        }
     } catch (error) {
         console.error('[Server] Fatal error during startup:', error);
         process.exit(1);

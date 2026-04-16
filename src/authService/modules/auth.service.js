@@ -179,9 +179,12 @@ class AuthService {
                     client: user.client
                 }
             };
-            return result;
         } catch (error) {
-            logger.error('Login failed', { error: error.message, email, organizationId });
+            logger.error('Login failed', {
+                error: error.message,
+                identifier: (emailOrPhone || '').trim(),
+                organizationId,
+            });
             throw error;
         }
     }
