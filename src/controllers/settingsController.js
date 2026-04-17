@@ -4,11 +4,20 @@ async function _ensureSuperadmin(req, res) {
     let isSuperadmin = false;
     const fromToken = req.user && (req.user.role || req.user.roleName || req.user.roleCode);
     const rawRole = fromToken || req.headers['x-user-role'] || req.headers['x-user-roles'];
+    console.log('[DEBUG] _ensureSuperadmin: req.user:', req.user);
+    console.log('[DEBUG] _ensureSuperadmin: headers:', {
+        'x-user-role': req.headers['x-user-role'],
+        'x-user-roles': req.headers['x-user-roles'],
+        'x-user-id': req.headers['x-user-id'],
+        'authorization': req.headers['authorization']
+    });
     if (rawRole) {
         const userRole = typeof rawRole === 'string' ? rawRole.trim().toUpperCase() : '';
+        console.log('[DEBUG] _ensureSuperadmin: userRole:', userRole);
         isSuperadmin = userRole === 'SUPERADMIN' || userRole.split(',').map(r => r.trim().toUpperCase()).includes('SUPERADMIN');
     }
     if (!isSuperadmin && req.headers['x-user-id']) {
+        console.log('[DEBUG] _ensureSuperadmin: trying fallback lookup for user id', req.headers['x-user-id']);
         try {
             let rows = await authQuery(
                 `SELECT r.code FROM auth_db.users u
@@ -32,6 +41,7 @@ async function _ensureSuperadmin(req, res) {
         }
     }
     if (!isSuperadmin && req.headers['x-role-id']) {
+        console.log('[DEBUG] _ensureSuperadmin: trying fallback lookup for role id', req.headers['x-role-id']);
         try {
             const rows = await authQuery(
                 'SELECT code FROM auth_db.roles WHERE id = ? LIMIT 1',
@@ -44,9 +54,11 @@ async function _ensureSuperadmin(req, res) {
         }
     }
     if (!isSuperadmin) {
+        console.warn('[DEBUG] _ensureSuperadmin: NOT SUPERADMIN, denying access');
         res.status(403).json({ success: false, message: 'Forbidden: Only Superadmins can update settings' });
         return false;
     }
+    console.log('[DEBUG] _ensureSuperadmin: SUPERADMIN detected, access granted');
     return true;
 }
 
