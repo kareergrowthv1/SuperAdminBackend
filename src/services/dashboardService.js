@@ -345,13 +345,15 @@ const checkServiceHealth = async (name, url) => {
         return {
             name,
             status: response.status === 200 ? 'healthy' : 'degraded',
-            latencyMs: Date.now() - start
+            latencyMs: Date.now() - start,
+            healthUrl: url
         };
     } catch (error) {
         return {
             name,
             status: 'down',
-            latencyMs: null
+            latencyMs: null,
+            healthUrl: url
         };
     }
 };
@@ -373,7 +375,6 @@ const getServiceHealth = async () => {
     }
 
     const services = await Promise.all([
-        checkServiceHealth('api-gateway', `${config.apiGatewayUrl}/health`),
         checkServiceHealth('superadmin-backend', `${config.authServiceUrl}/health`), 
         checkServiceHealth('admin-backend', `${config.adminBackendUrl}/health`),
         checkServiceHealth('auth', `${config.authServiceUrl}/health`),
