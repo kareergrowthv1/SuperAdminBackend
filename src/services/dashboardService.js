@@ -377,7 +377,6 @@ const getServiceHealth = async () => {
     const services = await Promise.all([
         checkServiceHealth('superadmin-backend', `${config.authServiceUrl}/health`), 
         checkServiceHealth('admin-backend', `${config.adminBackendUrl}/health`),
-        checkServiceHealth('auth', `${config.authServiceUrl}/health`),
         checkServiceHealth('candidate-backend', `${config.candidateServiceUrl}/health`),
         checkServiceHealth('ai-service', `${config.aiServiceUrl}/health`),
         checkServiceHealth('streaming', `${config.streamingServiceUrl}/health`)
