@@ -46,9 +46,12 @@ class UserService {
                 roleName: user.role_name,
                 roleVersion: user.role_version,
                 isCollege: !!user.is_college,
+                createdAt: user.created_at,
+                updatedAt: user.updated_at,
                 lastLoginAt: user.last_login_at,
                 lastLoginIp: user.last_login_ip,
-                lastLoginDevice: user.last_login_device
+                lastLoginDevice: user.last_login_device,
+                lastLoginSystem: user.last_login_system
             };
 
             return cleanUser;

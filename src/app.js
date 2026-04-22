@@ -38,6 +38,36 @@ const rateLimitMiddleware = require('./authService/middleware/rateLimit.middlewa
 
 const app = express();
 
+const MYSQL_DATETIME_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?$/;
+const TIMESTAMP_KEYS = new Set(['createdAt', 'updatedAt', 'created_at', 'updated_at']);
+
+function normalizeApiTimestamps(value, parentKey = '') {
+    if (value == null) return value;
+
+    if (value instanceof Date) {
+        return value.toISOString();
+    }
+
+    if (Array.isArray(value)) {
+        return value.map((item) => normalizeApiTimestamps(item));
+    }
+
+    if (typeof value === 'object') {
+        const out = {};
+        for (const [k, v] of Object.entries(value)) {
+            out[k] = normalizeApiTimestamps(v, k);
+        }
+        return out;
+    }
+
+    if (typeof value === 'string' && TIMESTAMP_KEYS.has(parentKey) && MYSQL_DATETIME_RE.test(value)) {
+        // Normalize MySQL datetime text to explicit UTC ISO string.
+        return `${value.replace(' ', 'T')}Z`;
+    }
+
+    return value;
+}
+
 // Render/Cloud proxies terminate TLS before Node; trust proxy so req.secure is accurate.
 app.set('trust proxy', 1);
 
@@ -93,6 +123,13 @@ app.use(cors({
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(cookieParser());
+
+// Ensure consistent timestamp serialization for all API responses.
+app.use((req, res, next) => {
+    const originalJson = res.json.bind(res);
+    res.json = (payload) => originalJson(normalizeApiTimestamps(payload));
+    next();
+});
 
 // Swagger Documentation
 const swaggerUiOptions = {
