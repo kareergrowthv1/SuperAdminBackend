@@ -435,6 +435,62 @@ class SettingsController {
         }
     }
 
+    /**
+     * Get Judge0 (RapidAPI) config from settings table.
+     */
+    async getJudge0Config(req, res) {
+        try {
+            const rows = await query('SELECT `value` FROM settings WHERE `key` = ?', ['judge0Settings']);
+            const defaults = {
+                enabled: false,
+                baseUrl: '',
+                apiHost: '',
+                apiKey: ''
+            };
+            if (rows.length > 0 && rows[0].value) {
+                const data = _parseJson(rows[0].value, defaults);
+                return res.status(200).json({
+                    success: true,
+                    data: {
+                        enabled: Boolean(data.enabled),
+                        baseUrl: String(data.baseUrl ?? '').trim(),
+                        apiHost: String(data.apiHost ?? '').trim(),
+                        apiKey: String(data.apiKey ?? '').trim(),
+                    }
+                });
+            }
+            return res.status(200).json({ success: true, data: defaults });
+        } catch (error) {
+            console.error('Failed to fetch Judge0 config:', error);
+            return res.status(500).json({ success: false, message: 'Failed to fetch Judge0 config' });
+        }
+    }
+
+    /**
+     * Save Judge0 (RapidAPI) config to settings table.
+     */
+    async saveJudge0Config(req, res) {
+        try {
+            if (!(await _ensureSuperadmin(req, res))) return;
+            const b = req.body ?? {};
+            const payload = {
+                enabled: Boolean(b.enabled),
+                baseUrl: String(b.baseUrl ?? '').trim(),
+                apiHost: String(b.apiHost ?? '').trim(),
+                apiKey: String(b.apiKey ?? '').trim(),
+            };
+            const val = JSON.stringify(payload);
+            await query(
+                'INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = ?, updated_at = CURRENT_TIMESTAMP',
+                ['judge0Settings', val, val]
+            );
+            return res.status(200).json({ success: true, message: 'Judge0 config saved', data: payload });
+        } catch (error) {
+            console.error('Failed to save Judge0 config:', error);
+            return res.status(500).json({ success: false, message: 'Failed to save Judge0 config' });
+        }
+    }
+
     async saveAiConfig(req, res) {
         try {
             if (!(await _ensureSuperadmin(req, res))) return;
