@@ -24,6 +24,7 @@ const resumeTemplatesRoutes = require('./routes/resumeTemplates');
 // Auth service (merged): load services so globals are set, then routes
 require('./authService/services');
 const authRoutes = require('./authService/routes/auth');
+const jwtAuthMiddleware = require('./authService/middleware/jwtAuth.middleware');
 const userRoutes = require('./authService/routes/users');
 const roleRoutes = require('./authService/routes/roles');
 const permissionRoutes = require('./authService/routes/permissions');
@@ -168,6 +169,10 @@ publicAuthRouter.use('/microsoft', microsoftAuthRoutes);
 publicAuthRouter.use('/linkedin', linkedinAuthRoutes);
 app.use('/auth-session', publicAuthRouter);
 
+// Browser-based superadmin dashboard traffic should use the same JWT auth stack as login,
+// not the service-to-service middleware used for internal backend calls.
+app.use('/superadmin/dashboard', jwtAuthMiddleware, dashboardRoutes);
+
 app.use(serviceAuth(config.service.internalToken));
 
 // Auth service routes (login, logout, me, users, roles, permissions, organization-features)
@@ -179,7 +184,6 @@ app.use('/organization-features', organizationFeaturesRoutes);
 
 // SuperadminFrontend expects /superadmin/* – mount under /superadmin
 app.use('/superadmin/admins', adminRoutes);
-app.use('/superadmin/dashboard', dashboardRoutes);
 app.use('/superadmin/sync', syncRoutes);
 app.use('/superadmin/payments', paymentRoutes);
 app.use('/superadmin/subscriptions', subscriptionRoutes);
