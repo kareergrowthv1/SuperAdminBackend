@@ -185,6 +185,7 @@ const jwtAuthMiddleware = async (req, res, next) => {
             username: user.username,
             organizationId: user.organizationId || user.organization_id,
             roleId: user.roleId || user.role_id,
+            roleCode: user.roleCode || user.role_code || null,
             roleVersion: currentRoleVersion,
             isAdmin: user.isAdmin || user.is_admin,
             isPlatformAdmin: user.isPlatformAdmin || user.is_platform_admin,
