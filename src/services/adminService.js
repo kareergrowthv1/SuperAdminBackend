@@ -1,10 +1,67 @@
 const axios = require('axios');
+const https = require('https');
 const config = require('../config');
 const db = require('../config/db');
 const { v4: uuidv4 } = require('uuid');
 const paymentService = require('./paymentService');
 const subscriptionService = require('./subscriptionService');
 const { formatDate } = require('../utils/helpers');
+
+const buildAdminBackendCandidates = () => {
+    const base = String(config.adminBackendUrl || '').trim().replace(/\/+$/, '');
+    const urls = [];
+    if (base) urls.push(base);
+
+    // Local dev fallback: if configured for HTTPS localhost, also try HTTP app port.
+    if (/^https:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(base)) {
+        urls.push('http://localhost:8002');
+        urls.push('http://127.0.0.1:8002');
+    }
+
+    return [...new Set(urls)];
+};
+
+const isLocalHttps = (url) => /^https:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(url);
+
+const postAdminBackend = async (path, payload, timeoutMs) => {
+    const candidates = buildAdminBackendCandidates();
+    if (candidates.length === 0) {
+        throw new Error('ADMIN_BACKEND_URL is not configured');
+    }
+
+    let lastError = null;
+    for (const baseUrl of candidates) {
+        try {
+            const response = await axios.post(
+                `${baseUrl}${path}`,
+                payload,
+                {
+                    headers: {
+                        'X-Service-Token': config.service.internalToken,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout: timeoutMs,
+                    ...(isLocalHttps(baseUrl)
+                        ? { httpsAgent: new https.Agent({ rejectUnauthorized: false }) }
+                        : {})
+                }
+            );
+            return response;
+        } catch (error) {
+            lastError = error;
+            const reason = error.response?.data?.message || error.message;
+            console.warn(`[SuperadminService] AdminBackend call failed via ${baseUrl}: ${reason}`);
+        }
+    }
+
+    if (lastError?.response) {
+        const err = new Error(lastError.response.data?.message || 'Failed to call AdminBackend');
+        err.status = lastError.response.status;
+        throw err;
+    }
+
+    throw new Error('AdminBackend service unavailable');
+};
 
 // Generate a random password
 const generatePassword = () => {
@@ -83,17 +140,7 @@ const createAdminViaBackend = async (adminData) => {
             adminData.password = generatePassword();
         }
 
-        const response = await axios.post(
-            `${config.adminBackendUrl}/admins/create`,
-            adminData,
-            {
-                headers: {
-                    'X-Service-Token': config.service.internalToken,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 30000
-            }
-        );
+        const response = await postAdminBackend('/admins/create', adminData, 30000);
 
         return response.data.data;
     } catch (error) {
@@ -111,16 +158,10 @@ const createAdminViaBackend = async (adminData) => {
 
 const provisionAdminSchema = async (adminId) => {
     try {
-        const response = await axios.post(
-            `${config.adminBackendUrl}/admins/provision`,
+        const response = await postAdminBackend(
+            '/admins/provision',
             { adminId },
-            {
-                headers: {
-                    'X-Service-Token': config.service.internalToken,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 60000 // Provisioning might take longer (schema creation + initialization)
-            }
+            60000 // Provisioning might take longer (schema creation + initialization)
         );
 
         return response.data;

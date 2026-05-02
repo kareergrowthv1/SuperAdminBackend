@@ -39,6 +39,14 @@ const rateLimitMiddleware = require('./authService/middleware/rateLimit.middlewa
 
 const app = express();
 
+const serviceOrJwtAuth = (req, res, next) => {
+    const serviceToken = req.headers['x-service-token'];
+    if (config.service.internalToken && serviceToken && serviceToken === config.service.internalToken) {
+        return next();
+    }
+    return jwtAuthMiddleware(req, res, next);
+};
+
 const MYSQL_DATETIME_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?$/;
 const TIMESTAMP_KEYS = new Set(['createdAt', 'updatedAt', 'created_at', 'updated_at']);
 
@@ -173,6 +181,20 @@ app.use('/auth-session', publicAuthRouter);
 // not the service-to-service middleware used for internal backend calls.
 app.use('/superadmin/dashboard', jwtAuthMiddleware, dashboardRoutes);
 
+// Browser-based Superadmin frontend APIs should use JWT auth.
+app.use('/superadmin/admins', jwtAuthMiddleware, adminRoutes);
+app.use('/superadmin/sync', jwtAuthMiddleware, syncRoutes);
+app.use('/superadmin/payments', jwtAuthMiddleware, paymentRoutes);
+app.use('/superadmin/subscriptions', jwtAuthMiddleware, subscriptionRoutes);
+app.use('/superadmin/credits', jwtAuthMiddleware, creditsRoutes);
+app.use('/superadmin/settings', serviceOrJwtAuth, settingsRoutes);
+app.use('/superadmin/plans', jwtAuthMiddleware, plansRoutes);
+app.use('/superadmin/admin-plans', jwtAuthMiddleware, adminPlansRoutes);
+app.use('/superadmin/discounts', jwtAuthMiddleware, discountsRoutes);
+app.use('/superadmin/jobs', jwtAuthMiddleware, jobRoutes);
+app.use('/superadmin/report-levels', jwtAuthMiddleware, reportLevelsRoutes);
+app.use('/superadmin/resume', jwtAuthMiddleware, resumeTemplatesRoutes);
+
 app.use(serviceAuth(config.service.internalToken));
 
 // Auth service routes (login, logout, me, users, roles, permissions, organization-features)
@@ -181,21 +203,6 @@ app.use('/users', userRoutes);
 app.use('/roles', roleRoutes);
 app.use('/permissions', permissionRoutes);
 app.use('/organization-features', organizationFeaturesRoutes);
-
-// SuperadminFrontend expects /superadmin/* – mount under /superadmin
-app.use('/superadmin/admins', adminRoutes);
-app.use('/superadmin/sync', syncRoutes);
-app.use('/superadmin/payments', paymentRoutes);
-app.use('/superadmin/subscriptions', subscriptionRoutes);
-app.use('/superadmin/credits', creditsRoutes);
-app.use('/superadmin/settings', settingsRoutes);
-app.use('/superadmin/plans', plansRoutes);
-app.use('/superadmin/admin-plans', adminPlansRoutes);
-app.use('/superadmin/discounts', discountsRoutes);
-app.use('/superadmin/jobs', jobRoutes);
-app.use('/superadmin/report-levels', reportLevelsRoutes);
-app.use('/superadmin/resume', resumeTemplatesRoutes);
-
 
 app.use(errorMiddleware);
 

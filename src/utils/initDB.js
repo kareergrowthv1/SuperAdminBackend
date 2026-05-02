@@ -230,6 +230,32 @@ const runMigrations = async () => {
             [defaultEmailSettings]
         );
 
+        // Ensure Judge0 settings row exists with startup defaults
+        const defaultJudge0Settings = JSON.stringify({
+            enabled: true,
+            baseUrl: 'https://judge0-ce.p.rapidapi.com',
+            apiKey: '43512c6e30msh41aa5f2ad892b93p19f52ejsn453b56bbb766'
+        });
+        await conn.query(
+            `INSERT IGNORE INTO settings (\`key\`, \`value\`) VALUES ('judge0Settings', ?)`,
+            [defaultJudge0Settings]
+        );
+
+        // Ensure Google Meet settings row exists with startup defaults
+        const defaultGoogleMeetSettings = JSON.stringify({
+            enabled: false,
+            clientId: '',
+            clientSecret: '',
+            refreshToken: '',
+            calendarId: 'primary',
+            includeLoggedInUser: true,
+            notifyPanelSelection: true
+        });
+        await conn.query(
+            `INSERT IGNORE INTO settings (\`key\`, \`value\`) VALUES ('googleMeetSettings', ?)`,
+            [defaultGoogleMeetSettings]
+        );
+
         // Automated migrations from schemas/migrations folder
         const migrationsDir = path.join(__dirname, '../../schemas/migrations');
         if (fs.existsSync(migrationsDir)) {

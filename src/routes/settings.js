@@ -15,6 +15,11 @@ router.put('/whatsapp', settingsController.saveWhatsappConfig);
 router.get('/judge0', settingsController.getJudge0Config);
 router.put('/judge0', settingsController.saveJudge0Config);
 
+router.get('/google-meet', settingsController.getGoogleMeetConfig);
+router.put('/google-meet', settingsController.saveGoogleMeetConfig);
+router.get('/google-meet/oauth-url', settingsController.getGoogleMeetOauthUrl);
+router.post('/google-meet/oauth-exchange', settingsController.exchangeGoogleMeetOauthCode);
+
 router.get('/notifications', settingsController.getNotifications);
 router.post('/notifications', settingsController.saveNotifications);
 

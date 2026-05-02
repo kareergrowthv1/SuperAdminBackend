@@ -1,8 +1,34 @@
+const axios = require('axios');
+const config = require('../config');
 const { query, authQuery } = require('../config/db');
 
 async function _ensureSuperadmin(req, res) {
+    const isSuperadminCode = (value) => {
+        const normalized = String(value || '').trim().toUpperCase();
+        if (!normalized) return false;
+        const compact = normalized.replace(/[\s_-]+/g, '');
+        const allowed = new Set(['SUPERADMIN', 'PLATFORMADMIN']);
+        return allowed.has(compact);
+    };
+
+    const isTruthyAdminFlag = (value) => {
+        if (value === true || value === 1) return true;
+        const s = String(value || '').trim().toLowerCase();
+        return s === 'true' || s === '1' || s === 'yes';
+    };
+
     let isSuperadmin = false;
-    const fromToken = req.user && (req.user.role || req.user.roleName || req.user.roleCode);
+    const userOrgId = req.user?.organizationId ?? req.user?.organization_id ?? null;
+    if (req.user && (
+        isTruthyAdminFlag(req.user.isPlatformAdmin)
+        || isTruthyAdminFlag(req.user.is_platform_admin)
+        || (isTruthyAdminFlag(req.user.isAdmin) || isTruthyAdminFlag(req.user.is_admin)) && !userOrgId
+    )) {
+        isSuperadmin = true;
+    }
+    const fromToken = req.user && (req.user.role || req.user.roleName || req.user.roleCode || req.user.role_code);
+    const reqUserId = req.user?.id || req.user?.userId || req.headers['x-user-id'];
+    const reqRoleId = req.user?.roleId || req.user?.role_id || req.headers['x-role-id'];
     const rawRole = fromToken || req.headers['x-user-role'] || req.headers['x-user-roles'];
     console.log('[DEBUG] _ensureSuperadmin: req.user:', req.user);
     console.log('[DEBUG] _ensureSuperadmin: headers:', {
@@ -14,41 +40,52 @@ async function _ensureSuperadmin(req, res) {
     if (rawRole) {
         const userRole = typeof rawRole === 'string' ? rawRole.trim().toUpperCase() : '';
         console.log('[DEBUG] _ensureSuperadmin: userRole:', userRole);
-        isSuperadmin = userRole === 'SUPERADMIN' || userRole.split(',').map(r => r.trim().toUpperCase()).includes('SUPERADMIN');
+        isSuperadmin = isSuperadminCode(userRole)
+            || userRole.split(',').map(r => r.trim().toUpperCase()).some(isSuperadminCode);
     }
-    if (!isSuperadmin && req.headers['x-user-id']) {
-        console.log('[DEBUG] _ensureSuperadmin: trying fallback lookup for user id', req.headers['x-user-id']);
+    if (!isSuperadmin && reqUserId) {
+        console.log('[DEBUG] _ensureSuperadmin: trying fallback lookup for user id', reqUserId);
         try {
             let rows = await authQuery(
-                `SELECT r.code FROM auth_db.users u
+                `SELECT r.code, u.is_admin, u.is_platform_admin, u.organization_id FROM auth_db.users u
                  INNER JOIN auth_db.roles r ON r.id = u.role_id
                  WHERE u.id = ? AND (u.is_admin = 1 OR u.is_platform_admin = 1) LIMIT 1`,
-                [req.headers['x-user-id']]
+                [reqUserId]
             );
             let roleCode = rows[0]?.code ?? rows[0]?.CODE;
-            if (!roleCode || String(roleCode).toUpperCase() !== 'SUPERADMIN') {
+            const isPlatformAdmin = isTruthyAdminFlag(rows[0]?.is_platform_admin);
+            const isGlobalAdmin = isTruthyAdminFlag(rows[0]?.is_admin) && !rows[0]?.organization_id;
+            if (isPlatformAdmin || isGlobalAdmin) {
+                isSuperadmin = true;
+            }
+            if (!isSuperadmin && !isSuperadminCode(roleCode)) {
                 rows = await authQuery(
-                    `SELECT r.code FROM auth_db.users u
+                    `SELECT r.code, u.is_admin, u.is_platform_admin, u.organization_id FROM auth_db.users u
                      INNER JOIN auth_db.roles r ON r.id = u.role_id
                      WHERE u.id = ? LIMIT 1`,
-                    [req.headers['x-user-id']]
+                    [reqUserId]
                 );
                 roleCode = rows[0]?.code ?? rows[0]?.CODE;
+                const fallbackPlatformAdmin = isTruthyAdminFlag(rows[0]?.is_platform_admin);
+                const fallbackGlobalAdmin = isTruthyAdminFlag(rows[0]?.is_admin) && !rows[0]?.organization_id;
+                if (fallbackPlatformAdmin || fallbackGlobalAdmin) {
+                    isSuperadmin = true;
+                }
             }
-            isSuperadmin = (roleCode && String(roleCode).toUpperCase() === 'SUPERADMIN');
+            isSuperadmin = isSuperadmin || isSuperadminCode(roleCode);
         } catch (err) {
             console.warn('[RBAC] Fallback role lookup failed:', err.message);
         }
     }
-    if (!isSuperadmin && req.headers['x-role-id']) {
-        console.log('[DEBUG] _ensureSuperadmin: trying fallback lookup for role id', req.headers['x-role-id']);
+    if (!isSuperadmin && reqRoleId) {
+        console.log('[DEBUG] _ensureSuperadmin: trying fallback lookup for role id', reqRoleId);
         try {
             const rows = await authQuery(
                 'SELECT code FROM auth_db.roles WHERE id = ? LIMIT 1',
-                [req.headers['x-role-id']]
+                [reqRoleId]
             );
             const roleCode = rows[0]?.code ?? rows[0]?.CODE;
-            isSuperadmin = (roleCode && String(roleCode).toUpperCase() === 'SUPERADMIN');
+            isSuperadmin = isSuperadminCode(roleCode);
         } catch (err) {
             console.warn('[RBAC] Role-by-id lookup failed:', err.message);
         }
@@ -66,6 +103,22 @@ function _parseJson(val, fallback) {
     if (val === undefined || val === null) return fallback;
     if (typeof val === 'object') return val;
     try { return JSON.parse(val); } catch (e) { return fallback; }
+}
+
+function _resolveCanonicalGoogleMeetRedirectUri(proposedUri) {
+    const envOverride = String(process.env.GOOGLE_MEET_REDIRECT_URI || '').trim();
+    const fallback = 'http://localhost:4000/auth/google/callback';
+    const canonical = envOverride || fallback;
+
+    const proposed = String(proposedUri || '').trim();
+    if (!proposed) return canonical;
+
+    // Allow localhost callback only. If caller sends LAN/IP callback, force canonical localhost URI.
+    const allowed = new Set([
+        'http://localhost:4000/auth/google/callback',
+        'https://localhost:4000/auth/google/callback',
+    ]);
+    return allowed.has(proposed) ? proposed : canonical;
 }
 
 class SettingsController {
@@ -444,7 +497,6 @@ class SettingsController {
             const defaults = {
                 enabled: false,
                 baseUrl: '',
-                apiHost: '',
                 apiKey: ''
             };
             if (rows.length > 0 && rows[0].value) {
@@ -454,7 +506,6 @@ class SettingsController {
                     data: {
                         enabled: Boolean(data.enabled),
                         baseUrl: String(data.baseUrl ?? '').trim(),
-                        apiHost: String(data.apiHost ?? '').trim(),
                         apiKey: String(data.apiKey ?? '').trim(),
                     }
                 });
@@ -476,7 +527,6 @@ class SettingsController {
             const payload = {
                 enabled: Boolean(b.enabled),
                 baseUrl: String(b.baseUrl ?? '').trim(),
-                apiHost: String(b.apiHost ?? '').trim(),
                 apiKey: String(b.apiKey ?? '').trim(),
             };
             const val = JSON.stringify(payload);
@@ -488,6 +538,244 @@ class SettingsController {
         } catch (error) {
             console.error('Failed to save Judge0 config:', error);
             return res.status(500).json({ success: false, message: 'Failed to save Judge0 config' });
+        }
+    }
+
+    /**
+     * Get Google Meet integration config from settings table.
+     */
+    async getGoogleMeetConfig(req, res) {
+        try {
+            const rows = await query('SELECT `value` FROM settings WHERE `key` = ?', ['googleMeetSettings']);
+            const defaults = {
+                enabled: false,
+                clientId: '',
+                clientSecret: '',
+                refreshToken: '',
+                calendarId: 'primary',
+                panelMembers: [],
+                includeLoggedInUser: true,
+                notifyPanelSelection: true
+            };
+            if (rows.length > 0 && rows[0].value) {
+                const data = _parseJson(rows[0].value, defaults);
+                const panelMembers = Array.isArray(data.panelMembers)
+                    ? data.panelMembers
+                        .map((item) => ({
+                            name: String(item?.name || '').trim(),
+                            email: String(item?.email || '').trim().toLowerCase(),
+                            role: String(item?.role || '').trim(),
+                            skills: String(item?.skills || '').trim(),
+                            experience: String(item?.experience || '').trim(),
+                            isPrimary: item?.isPrimary === true
+                        }))
+                        .filter((item) => item.email)
+                    : [];
+                return res.status(200).json({
+                    success: true,
+                    data: {
+                        enabled: Boolean(data.enabled),
+                        clientId: String(data.clientId ?? '').trim(),
+                        clientSecret: String(data.clientSecret ?? '').trim(),
+                        refreshToken: String(data.refreshToken ?? '').trim(),
+                        calendarId: String(data.calendarId ?? 'primary').trim() || 'primary',
+                        panelMembers,
+                        includeLoggedInUser: data.includeLoggedInUser !== false,
+                        notifyPanelSelection: data.notifyPanelSelection !== false
+                    }
+                });
+            }
+            return res.status(200).json({ success: true, data: defaults });
+        } catch (error) {
+            console.error('Failed to fetch Google Meet config:', error);
+            return res.status(500).json({ success: false, message: 'Failed to fetch Google Meet config' });
+        }
+    }
+
+    /**
+     * Save Google Meet integration config to settings table.
+     */
+    async saveGoogleMeetConfig(req, res) {
+        try {
+            if (!(await _ensureSuperadmin(req, res))) return;
+            const b = req.body ?? {};
+
+            const normalizedMembers = Array.isArray(b.panelMembers)
+                ? b.panelMembers
+                    .map((item) => ({
+                        name: String(item?.name || '').trim(),
+                        email: String(item?.email || '').trim().toLowerCase(),
+                        role: String(item?.role || '').trim(),
+                        skills: String(item?.skills || '').trim(),
+                        experience: String(item?.experience || '').trim(),
+                        isPrimary: item?.isPrimary === true
+                    }))
+                    .filter((item) => item.email)
+                : [];
+
+            const payload = {
+                enabled: Boolean(b.enabled),
+                clientId: String(b.clientId ?? '').trim(),
+                clientSecret: String(b.clientSecret ?? '').trim(),
+                refreshToken: String(b.refreshToken ?? '').trim(),
+                calendarId: String(b.calendarId ?? 'primary').trim() || 'primary',
+                panelMembers: normalizedMembers,
+                includeLoggedInUser: b.includeLoggedInUser !== false,
+                notifyPanelSelection: b.notifyPanelSelection !== false
+            };
+
+            const val = JSON.stringify(payload);
+            await query(
+                'INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = ?, updated_at = CURRENT_TIMESTAMP',
+                ['googleMeetSettings', val, val]
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: 'Google Meet config saved',
+                data: payload
+            });
+        } catch (error) {
+            console.error('Failed to save Google Meet config:', error);
+            return res.status(500).json({ success: false, message: 'Failed to save Google Meet config' });
+        }
+    }
+
+    /**
+     * Build Google OAuth URL for Google Meet/Calendar integration.
+     * Frontend redirect URI example: http://localhost:4001/auth/google/callback
+     */
+    async getGoogleMeetOauthUrl(req, res) {
+        try {
+            if (!(await _ensureSuperadmin(req, res))) return;
+
+            const redirectUri = _resolveCanonicalGoogleMeetRedirectUri(req.query.redirectUri);
+            if (!redirectUri) {
+                return res.status(400).json({ success: false, message: 'redirectUri is required' });
+            }
+
+            const rows = await query('SELECT `value` FROM settings WHERE `key` = ?', ['googleMeetSettings']);
+            const current = rows.length > 0 ? _parseJson(rows[0].value, {}) : {};
+
+            const clientId = String(current.clientId || config.google?.clientId || '').trim();
+            if (!clientId) {
+                return res.status(400).json({ success: false, message: 'Google Client ID is not configured' });
+            }
+
+            const statePayload = {
+                source: 'google-meet-settings',
+                redirectUri,
+                t: Date.now()
+            };
+            const state = Buffer.from(JSON.stringify(statePayload)).toString('base64url');
+
+            const params = new URLSearchParams({
+                client_id: clientId,
+                redirect_uri: redirectUri,
+                response_type: 'code',
+                access_type: 'offline',
+                prompt: 'consent',
+                include_granted_scopes: 'true',
+                scope: [
+                    'https://www.googleapis.com/auth/calendar.events',
+                    'https://www.googleapis.com/auth/calendar'
+                ].join(' '),
+                state
+            });
+
+            const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+            return res.status(200).json({ success: true, data: { authUrl, redirectUri } });
+        } catch (error) {
+            console.error('Failed to generate Google Meet OAuth URL:', error);
+            return res.status(500).json({ success: false, message: 'Failed to generate Google OAuth URL' });
+        }
+    }
+
+    /**
+     * Exchange Google OAuth code for refresh token and save to googleMeetSettings.
+     */
+    async exchangeGoogleMeetOauthCode(req, res) {
+        try {
+            if (!(await _ensureSuperadmin(req, res))) return;
+
+            const code = String(req.body?.code || '').trim();
+            const redirectUri = _resolveCanonicalGoogleMeetRedirectUri(req.body?.redirectUri);
+            if (!code || !redirectUri) {
+                return res.status(400).json({ success: false, message: 'code and redirectUri are required' });
+            }
+
+            const rows = await query('SELECT `value` FROM settings WHERE `key` = ?', ['googleMeetSettings']);
+            const defaults = {
+                enabled: false,
+                clientId: '',
+                clientSecret: '',
+                refreshToken: '',
+                calendarId: 'primary',
+                panelMembers: [],
+                includeLoggedInUser: true,
+                notifyPanelSelection: true
+            };
+            const current = rows.length > 0 ? _parseJson(rows[0].value, defaults) : defaults;
+
+            const clientId = String(current.clientId || config.google?.clientId || '').trim();
+            const clientSecret = String(current.clientSecret || config.google?.clientSecret || '').trim();
+
+            if (!clientId || !clientSecret) {
+                return res.status(400).json({ success: false, message: 'Google Client ID/Secret must be configured before OAuth connect' });
+            }
+
+            const tokenPayload = new URLSearchParams({
+                code,
+                client_id: clientId,
+                client_secret: clientSecret,
+                redirect_uri: redirectUri,
+                grant_type: 'authorization_code'
+            });
+
+            const tokenResponse = await axios.post('https://oauth2.googleapis.com/token', tokenPayload.toString(), {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                timeout: 15000
+            });
+
+            const incomingRefreshToken = String(tokenResponse.data?.refresh_token || '').trim();
+            const effectiveRefreshToken = incomingRefreshToken || String(current.refreshToken || '').trim();
+            if (!effectiveRefreshToken) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Google did not return refresh_token. Reconnect with consent prompt or remove app access and retry.'
+                });
+            }
+
+            const payload = {
+                enabled: current.enabled === true,
+                clientId,
+                clientSecret,
+                refreshToken: effectiveRefreshToken,
+                calendarId: String(current.calendarId || 'primary').trim() || 'primary',
+                panelMembers: Array.isArray(current.panelMembers) ? current.panelMembers : [],
+                includeLoggedInUser: current.includeLoggedInUser !== false,
+                notifyPanelSelection: current.notifyPanelSelection !== false
+            };
+
+            const val = JSON.stringify(payload);
+            await query(
+                'INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = ?, updated_at = CURRENT_TIMESTAMP',
+                ['googleMeetSettings', val, val]
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: 'Google OAuth connected successfully',
+                data: {
+                    connected: true,
+                    hasRefreshToken: Boolean(effectiveRefreshToken),
+                    calendarId: payload.calendarId
+                }
+            });
+        } catch (error) {
+            const message = error?.response?.data?.error_description || error?.response?.data?.error || error.message || 'OAuth exchange failed';
+            console.error('Failed to exchange Google OAuth code:', message);
+            return res.status(500).json({ success: false, message });
         }
     }
 
