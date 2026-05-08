@@ -4,7 +4,7 @@ const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const swaggerUi = require('swagger-ui-express');
 const config = require('./config');
-const swaggerDocument = require('./docs/swagger');
+const swaggerTemplate = require('./docs/swagger');
 const serviceAuth = require('./middlewares/serviceAuth.middleware');
 const errorMiddleware = require('./middlewares/error.middleware');
 const adminRoutes = require('./routes/admins');
@@ -36,6 +36,39 @@ const microsoftAuthRoutes = require('./authService/routes/microsoft');
 const linkedinAuthRoutes = require('./authService/routes/linkedin');
 const authController = require('./authService/controllers/authController');
 const rateLimitMiddleware = require('./authService/middleware/rateLimit.middleware');
+
+const routeRegistrations = [
+    { basePath: '/superadmin/admins', router: adminRoutes, tag: 'Admin Management' },
+    { basePath: '/superadmin/dashboard', router: dashboardRoutes, tag: 'Dashboard' },
+    { basePath: '/superadmin/sync', router: syncRoutes, tag: 'Sync' },
+    { basePath: '/superadmin/payments', router: paymentRoutes, tag: 'Payments' },
+    { basePath: '/superadmin/subscriptions', router: subscriptionRoutes, tag: 'Subscriptions' },
+    { basePath: '/superadmin/credits', router: creditsRoutes, tag: 'Credits' },
+    { basePath: '/superadmin/settings', router: settingsRoutes, tag: 'Settings' },
+    { basePath: '/superadmin/plans', router: plansRoutes, tag: 'Plans' },
+    { basePath: '/superadmin/jobs', router: jobRoutes, tag: 'Jobs' },
+    { basePath: '/superadmin/admin-plans', router: adminPlansRoutes, tag: 'Admin Plans' },
+    { basePath: '/superadmin/discounts', router: discountsRoutes, tag: 'Discounts' },
+    { basePath: '/superadmin/report-levels', router: reportLevelsRoutes, tag: 'Report Levels' },
+    { basePath: '/superadmin/resume', router: resumeTemplatesRoutes, tag: 'Resume Templates' },
+    { basePath: '/', router: authHealthRoutes, tag: 'Health' },
+    { basePath: '/auth-session', router: authRoutes, tag: 'Auth Session' },
+    { basePath: '/auth-session/github', router: githubAuthRoutes, tag: 'Auth Session' },
+    { basePath: '/auth-session/google', router: googleAuthRoutes, tag: 'Auth Session' },
+    { basePath: '/auth-session/microsoft', router: microsoftAuthRoutes, tag: 'Auth Session' },
+    { basePath: '/auth-session/linkedin', router: linkedinAuthRoutes, tag: 'Auth Session' },
+    { basePath: '/users', router: userRoutes, tag: 'Users' },
+    { basePath: '/roles', router: roleRoutes, tag: 'Roles' },
+    { basePath: '/permissions', router: permissionRoutes, tag: 'Permissions' },
+    { basePath: '/organization-features', router: organizationFeaturesRoutes, tag: 'Organization Features' },
+];
+
+const getSwaggerDocument = () => {
+    if (typeof swaggerTemplate.buildSwaggerDocument === 'function') {
+        return swaggerTemplate.buildSwaggerDocument(routeRegistrations);
+    }
+    return swaggerTemplate;
+};
 
 const app = express();
 
@@ -150,6 +183,7 @@ const swaggerUiOptions = {
     `,
     customSiteTitle: 'Superadmin Backend API Documentation',
     swaggerOptions: {
+        url: '/api-docs.json',
         operationsSorter: (a, b) => {
             const order = { post: 0, get: 1, put: 2, patch: 3, delete: 4 };
             const methodA = a.get('method');
@@ -159,10 +193,10 @@ const swaggerUiOptions = {
     }
 };
 
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, swaggerUiOptions));
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(null, swaggerUiOptions));
 app.get('/api-docs.json', (req, res) => {
     res.setHeader('Content-Type', 'application/json');
-    res.send(swaggerDocument);
+    res.send(getSwaggerDocument());
 });
 
 // Health: use auth health router (GET /health, GET /ready)

@@ -56,12 +56,22 @@ const startServer = async () => {
         // Optional HTTPS listener for LAN sharing / secure browser access.
         const sslKeyPath = process.env.SSL_KEY_PATH;
         const sslCertPath = process.env.SSL_CERT_PATH;
+        const sslPfxPath = process.env.SSL_PFX_PATH;
+        const sslPfxPassphrase = process.env.SSL_PFX_PASSPHRASE;
         const sslPort = Number(process.env.SSL_PORT || 0);
-        if (sslKeyPath && sslCertPath && sslPort > 0 && fs.existsSync(sslKeyPath) && fs.existsSync(sslCertPath)) {
-            const tlsOptions = {
+        let tlsOptions = null;
+        if (sslPort > 0 && sslPfxPath && fs.existsSync(sslPfxPath)) {
+            tlsOptions = {
+                pfx: fs.readFileSync(sslPfxPath),
+                passphrase: sslPfxPassphrase || undefined,
+            };
+        } else if (sslKeyPath && sslCertPath && sslPort > 0 && fs.existsSync(sslKeyPath) && fs.existsSync(sslCertPath)) {
+            tlsOptions = {
                 key: fs.readFileSync(sslKeyPath),
                 cert: fs.readFileSync(sslCertPath),
             };
+        }
+        if (tlsOptions) {
             https.createServer(tlsOptions, app).listen(sslPort, '0.0.0.0', () => {
                 console.log(`Superadmin Backend HTTPS running on port ${sslPort}`);
             });

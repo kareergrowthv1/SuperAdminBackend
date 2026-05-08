@@ -23,6 +23,13 @@ function isEmail(input) {
     return typeof input === 'string' && input.includes('@') && input.includes('.');
 }
 
+function createHttpError(statusCode, message, code) {
+    const error = new Error(message);
+    error.statusCode = statusCode;
+    if (code) error.code = code;
+    return error;
+}
+
 class AuthService {
     /**
      * Find user by email or phone (auth_db.users).
@@ -66,7 +73,7 @@ class AuthService {
             const trimmed = (emailOrPhone || '').trim();
             if (!trimmed) {
                 await loginAttempt.recordFailedAttempt('global', trimmed || 'empty', context.ipAddress, context.userAgent);
-                throw new Error('Invalid credentials');
+                throw createHttpError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
             }
 
             const user = await this.findUserByEmailOrPhone(trimmed);
@@ -74,7 +81,7 @@ class AuthService {
 
             if (users.length === 0) {
                 await loginAttempt.recordFailedAttempt('global', trimmed, context.ipAddress, context.userAgent);
-                throw new Error('Invalid credentials');
+                throw createHttpError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
             }
 
             const userOrgKey = user.organization_id || 'platform';
@@ -83,20 +90,20 @@ class AuthService {
             const attemptCheck = await loginAttempt.checkLoginAttempts(userOrgKey, attemptKey);
 
             if (!attemptCheck.allowed) {
-                throw new Error(attemptCheck.message || 'Account locked');
+                throw createHttpError(423, attemptCheck.message || 'Account locked', 'ACCOUNT_LOCKED');
             }
 
             const passwordMatch = await bcrypt.compare(password, user.password_hash);
 
             if (!passwordMatch) {
                 await loginAttempt.recordFailedAttempt(userOrgKey, attemptKey, context.ipAddress, context.userAgent);
-                throw new Error('Invalid credentials');
+                throw createHttpError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
             }
 
             if (user.roleCode !== 'SUPERADMIN') {
-                if (user.account_locked) throw new Error('Account is locked. Contact administrator.');
-                if (user.account_expired) throw new Error('Account has expired');
-                if (!user.enabled) throw new Error('Account is disabled');
+                if (user.account_locked) throw createHttpError(423, 'Account is locked. Contact administrator.', 'ACCOUNT_LOCKED');
+                if (user.account_expired) throw createHttpError(403, 'Account has expired', 'ACCOUNT_EXPIRED');
+                if (!user.enabled) throw createHttpError(403, 'Account is disabled', 'ACCOUNT_DISABLED');
             }
 
             // Fetch user permissions (SUPERADMIN gets full access)
