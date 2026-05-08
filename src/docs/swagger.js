@@ -1,6 +1,6 @@
 const config = require('../config');
 
-module.exports = {
+const baseSwaggerDocument = {
   openapi: '3.0.0',
   info: {
     title: 'KareerGrowth Superadmin Backend API',
@@ -622,3 +622,104 @@ module.exports = {
     }
   }
 };
+
+function joinPaths(basePath = '', routePath = '') {
+  const left = String(basePath || '').replace(/\/$/, '');
+  const right = String(routePath || '').replace(/^\//, '');
+  if (!left && !right) return '/';
+  if (!left) return `/${right}`;
+  if (!right) return left || '/';
+  return `${left}/${right}`;
+}
+
+function toOpenApiPath(path) {
+  return String(path || '/')
+    .replace(/:([A-Za-z0-9_]+)/g, '{$1}')
+    .replace(/\/+/g, '/');
+}
+
+function extractPathParams(path) {
+  const matches = String(path || '').match(/\{([A-Za-z0-9_]+)\}/g) || [];
+  return matches.map((entry) => ({
+    name: entry.slice(1, -1),
+    in: 'path',
+    required: true,
+    schema: { type: 'string' },
+  }));
+}
+
+function collectRouterEndpoints(router, basePath = '') {
+  const endpoints = [];
+  if (!router || !Array.isArray(router.stack)) return endpoints;
+
+  for (const layer of router.stack) {
+    if (layer.route && layer.route.path) {
+      const routePaths = Array.isArray(layer.route.path) ? layer.route.path : [layer.route.path];
+      const methods = Object.keys(layer.route.methods || {}).filter((m) => layer.route.methods[m]);
+      for (const routePath of routePaths) {
+        const fullPath = toOpenApiPath(joinPaths(basePath, routePath));
+        for (const method of methods) {
+          endpoints.push({ path: fullPath, method: method.toLowerCase() });
+        }
+      }
+      continue;
+    }
+
+    if (layer && layer.name === 'router' && layer.handle && Array.isArray(layer.handle.stack)) {
+      endpoints.push(...collectRouterEndpoints(layer.handle, basePath));
+    }
+  }
+
+  return endpoints;
+}
+
+function deriveTagFromBasePath(basePath) {
+  const normalized = String(basePath || '').replace(/^\/+|\/+$/g, '');
+  if (!normalized) return 'General';
+  return normalized
+    .split('/')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function buildSwaggerDocument(routeRegistrations = []) {
+  const document = JSON.parse(JSON.stringify(baseSwaggerDocument));
+  document.paths = document.paths || {};
+  document.tags = document.tags || [];
+
+  for (const registration of routeRegistrations) {
+    const basePath = registration.basePath || '/';
+    const router = registration.router;
+    const tag = registration.tag || deriveTagFromBasePath(basePath);
+    const endpoints = collectRouterEndpoints(router, basePath);
+
+    if (!document.tags.some((t) => t.name === tag)) {
+      document.tags.push({ name: tag, description: `${tag} endpoints` });
+    }
+
+    for (const endpoint of endpoints) {
+      document.paths[endpoint.path] = document.paths[endpoint.path] || {};
+
+      if (document.paths[endpoint.path][endpoint.method]) {
+        continue;
+      }
+
+      const parameters = extractPathParams(endpoint.path);
+      document.paths[endpoint.path][endpoint.method] = {
+        tags: [tag],
+        summary: `${endpoint.method.toUpperCase()} ${endpoint.path}`,
+        responses: {
+          200: {
+            description: 'Success',
+          },
+        },
+        ...(parameters.length ? { parameters } : {}),
+      };
+    }
+  }
+
+  return document;
+}
+
+module.exports = baseSwaggerDocument;
+module.exports.buildSwaggerDocument = buildSwaggerDocument;
