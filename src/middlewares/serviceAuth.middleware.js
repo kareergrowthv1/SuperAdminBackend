@@ -20,6 +20,7 @@ const PUBLIC_AUTH_PATHS = [
     '/auth-session/candidate/details',
     '/auth-session/candidate/register',
     '/auth-session/candidate/forgot-password',
+    '/auth-session/candidate/reset-password',
 ];
 
 function isPublicAuthPath(path) {

@@ -237,7 +237,8 @@ const runMigrations = async () => {
             apiKey: '43512c6e30msh41aa5f2ad892b93p19f52ejsn453b56bbb766'
         });
         await conn.query(
-            `INSERT IGNORE INTO settings (\`key\`, \`value\`) VALUES ('judge0Settings', ?)`,
+            `INSERT INTO settings (\`key\`, \`value\`) VALUES ('judge0Settings', ?)
+             ON DUPLICATE KEY UPDATE \`value\` = VALUES(\`value\`), updated_at = CURRENT_TIMESTAMP`,
             [defaultJudge0Settings]
         );
 
